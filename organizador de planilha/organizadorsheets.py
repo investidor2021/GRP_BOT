@@ -161,10 +161,20 @@ def gravar_comlic(df_novos):
     if df_novos.empty:
         return "duplicado"
 
-    if not ws.get_all_values():
-        ws.update([df_novos.columns.tolist()])
+    # ✅ Alinha colunas do df com o expected_headers (adiciona as que faltam, descarta extras)
+    for h in expected_headers:
+        if h not in df_novos.columns:
+            df_novos[h] = ""
+    df_para_gravar = df_novos[expected_headers].copy()
+    # Converte tudo para string para evitar erros de serialização
+    df_para_gravar = df_para_gravar.fillna("").astype(str).replace("nan", "")
 
-    ws.append_rows(df_novos.values.tolist(), value_input_option="USER_ENTERED")
+    # Garante cabeçalho na planilha
+    valores_atuais = ws.get_all_values()
+    if not valores_atuais or valores_atuais[0] != expected_headers:
+        ws.update("A1", [expected_headers])
+
+    ws.append_rows(df_para_gravar.values.tolist(), value_input_option="USER_ENTERED")
     return "gravado"
 
 
