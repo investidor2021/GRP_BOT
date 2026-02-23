@@ -195,6 +195,10 @@ def gravar_aba_empenhar(df_selecionados):
         df_out.rename(columns={"Subelemento": "SUBELEMENTO"}, inplace=True)
     if "OC" not in df_out.columns:
         df_out["OC"] = ""
+    # Se OC estiver vazio (empenho por dotacao), usa o valor de Pedido
+    if "Pedido" in df_out.columns:
+        mask_vazio = df_out["OC"].astype(str).str.strip().isin(["", "nan", "0"])
+        df_out.loc[mask_vazio, "OC"] = df_out.loc[mask_vazio, "Pedido"].astype(str)
     for c in ["STATUS", "MENSAGEM", "EMPENHO_EXISTENTE", "DATA_PROCESSAMENTO"]:
         if c not in df_out.columns:
             df_out[c] = ""
