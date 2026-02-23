@@ -124,6 +124,10 @@ def carregar_pendentes_comlic():
     df = pd.DataFrame(records)
     if df.empty:
         return df
+
+    # Remove linhas completamente vazias (linhas em branco da planilha)
+    df = df[df["Pedido"].astype(str).str.strip().replace("nan", "") != ""]
+
     if "STATUS" in df.columns:
         mask = df["STATUS"].astype(str).str.strip().isin(["", "PENDENTE"])
         df = df[mask].copy()
@@ -145,8 +149,14 @@ def gravar_comlic(df_novos):
     existentes = ws.get_all_records(expected_headers=expected_headers)
     if existentes:
         df_exist = pd.DataFrame(existentes)
+        # Ignora linhas em branco ao comparar
         if "Pedido" in df_exist.columns:
-            df_novos = df_novos[~df_novos["Pedido"].isin(df_exist["Pedido"])]
+            pedidos_existentes = set(
+                df_exist["Pedido"].astype(str).str.strip()
+            ) - {"", "nan"}
+            df_novos = df_novos[
+                ~df_novos["Pedido"].astype(str).str.strip().isin(pedidos_existentes)
+            ]
 
     if df_novos.empty:
         return "duplicado"
