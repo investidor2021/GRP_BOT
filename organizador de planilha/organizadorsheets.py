@@ -406,6 +406,9 @@ else:
     for col in df_base.select_dtypes(include='integer').columns:
         if col != 'Selecionar':
             df_base[col] = df_base[col].astype(str).replace("nan", "")
+    # Subelemento deve sempre ter 2 digitos (ex: 7 -> 07)
+    if 'Subelemento' in df_base.columns:
+        df_base['Subelemento'] = df_base['Subelemento'].astype(str).str.strip().str.zfill(2)
 
     st.caption(f"📋 {len(df_base)} pedido(s) disponível(is). Marque os que deseja empenhar:")
 
@@ -429,11 +432,9 @@ else:
         key="tabela_empenhos"
     )
 
-    # Sincroniza a seleção de volta pro session_state
-    df_base["Selecionar"] = df_editado["Selecionar"].values
-    st.session_state["df_para_empenhar"] = df_base
-
-    df_selecionados = df_base[df_base["Selecionar"] == True].copy()
+    # Usa a selecao do editor sem conflitar com o key; pega as linhas completas de df_base
+    mask_sel = df_editado["Selecionar"].values
+    df_selecionados = df_base[mask_sel].copy()
     n_sel = len(df_selecionados)
 
     col_c1, col_c2, col_c3 = st.columns([2, 2, 1])
