@@ -1,0 +1,10 @@
+narwhals
+playwright
+pandas
+openpyxl
+greenlet
+python-dotenv
+gspread
+oauth2client
+pdfplumber
+streamlit

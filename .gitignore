@@ -1,0 +1,28 @@
+# Credenciais e configuração sensível
+credenciais.json
+organizador de planilha/credenciais.json
+.env
+
+# Locks do Excel
+~$*.xlsx
+~$*.xls
+
+# Planilhas locais (agora tudo vai via Google Sheets)
+listagem_empenhos.xlsx
+listagem_empenhos_resultado.xlsx
+pedidos_classificados*.xlsx
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Streamlit
+.streamlit/
+
+# IDE
+.vscode/
+.idea/
