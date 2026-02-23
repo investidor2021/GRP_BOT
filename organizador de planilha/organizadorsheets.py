@@ -193,17 +193,17 @@ def gravar_aba_empenhar(df_selecionados):
     df_out = df_selecionados.copy()
     if "Subelemento" in df_out.columns and "SUBELEMENTO" not in df_out.columns:
         df_out.rename(columns={"Subelemento": "SUBELEMENTO"}, inplace=True)
-    # Renomeia "Pedido" -> "DOTACAO" (nome que o robo usa na col A)
-    if "Pedido" in df_out.columns and "DOTACAO" not in df_out.columns:
-        df_out.rename(columns={"Pedido": "DOTACAO"}, inplace=True)
-    if "OC" not in df_out.columns:
-        df_out["OC"] = ""
+    # Garante que DOTACAO e OC existam
     if "DOTACAO" not in df_out.columns:
         df_out["DOTACAO"] = ""
+    if "OC" not in df_out.columns:
+        df_out["OC"] = ""
     # Robo le DOTACAO (col A) OU OC (col B), nunca as duas.
-    # Se OC preenchido -> COM/LIC -> zerar DOTACAO para evitar conflito.
-    mask_oc_preenchido = df_out["OC"].astype(str).str.strip().isin(["", "nan", "0"]) == False
-    df_out.loc[mask_oc_preenchido, "DOTACAO"] = ""
+    # DOTACAO e OC ja chegam corretos do editor; garante exclusividade:
+    mask_oc = df_out["OC"].astype(str).str.strip().isin(["", "nan", "0"]) == False
+    mask_dot = df_out["DOTACAO"].astype(str).str.strip().isin(["", "nan", "0"]) == False
+    df_out.loc[mask_oc, "DOTACAO"] = ""   # OC preenchido -> zera DOTACAO
+    df_out.loc[mask_dot & ~mask_oc, "OC"] = ""  # DOTACAO preenchido -> zera OC
     for c in ["STATUS", "MENSAGEM", "EMPENHO_EXISTENTE", "DATA_PROCESSAMENTO"]:
         if c not in df_out.columns:
             df_out[c] = ""
@@ -407,13 +407,19 @@ else:
     if "Selecionar" not in df_base.columns:
         df_base.insert(0, "Selecionar", False)
 
-    # Renomeia "Pedido" -> "DOTACAO" no dataframe de exibicao
-    if "Pedido" in df_base.columns and "DOTACAO" not in df_base.columns:
-        df_base.rename(columns={"Pedido": "DOTACAO"}, inplace=True)
-    # Registros do COM/LIC: OC preenchida -> DOTACAO deve ficar vazia na exibicao
-    if "OC" in df_base.columns and "DOTACAO" in df_base.columns:
-        mask_oc = df_base["OC"].astype(str).str.strip().isin(["", "nan", "0"]) == False
-        df_base.loc[mask_oc, "DOTACAO"] = ""
+    # "Pedido" do COM/LIC eh o numero da OC -> mapear para coluna OC (col B)
+    # DOTACAO (col A) eh preenchida manualmente para empenhos por dotacao
+    if "Pedido" in df_base.columns:
+        if "OC" not in df_base.columns:
+            # Sem OC: Pedido IS a OC
+            df_base.rename(columns={"Pedido": "OC"}, inplace=True)
+        else:
+            # OC existe mas pode estar vazia: preenche OC com Pedido onde OC vazia
+            mask_vazio = df_base["OC"].astype(str).str.strip().isin(["", "nan", "0"])
+            df_base.loc[mask_vazio, "OC"] = df_base.loc[mask_vazio, "Pedido"].astype(str)
+            df_base.drop(columns=["Pedido"], inplace=True, errors="ignore")
+    if "DOTACAO" not in df_base.columns:
+        df_base["DOTACAO"] = ""
 
     colunas_editor = ["Selecionar", "DOTACAO", "OC", "Fornecedor", "Descrição",
                       "Dotação", "Elemento", "Subelemento", "STATUS"]
