@@ -1,3 +1,14 @@
+import sys
+import os
+import logging
+import traceback
+
+# Força UTF-8 no stdout/stderr para suportar emojis no Windows (cp1252 nao suporta)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 from playwright.sync_api import sync_playwright
 from campos import registrar_resultado
 from playwright_context import criar_pagina
@@ -8,9 +19,6 @@ from datetime import datetime
 from empenho_modal import preencher_empenho_oc, preencher_empenho_dotacao
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import os
-import logging
-import traceback
 from dotenv import load_dotenv
 
 # ============================
@@ -22,7 +30,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.FileHandler(LOG_PATH, encoding="utf-8"),
-        logging.StreamHandler(),          # também imprime no console/Streamlit
+        logging.StreamHandler(stream=sys.stdout),  # stdout ja foi reconfigurado para utf-8
     ]
 )
 log = logging.getLogger(__name__)
@@ -107,10 +115,10 @@ def atualizar_status_comlic(spreadsheet, pedido, oc, status, mensagem, empenho_e
 
             if updates:
                 ws.batch_update(updates)
-                print(f"✅ COM/LIC atualizado: Pedido={pedido} OC={oc} → {status}")
+                log.info(f"✅ COM/LIC atualizado: Pedido={pedido} OC={oc} → {status}")
             return
 
-    print(f"⚠️ Não encontrou Pedido={pedido}/OC={oc} no COM/LIC para atualizar status")
+    log.warning(f"⚠️ Não encontrou Pedido={pedido}/OC={oc} no COM/LIC para atualizar status")
 
 
 # ============================
