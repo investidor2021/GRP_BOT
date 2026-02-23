@@ -185,20 +185,25 @@ def gravar_aba_empenhar(df_selecionados):
     ws.clear()
 
     # Garante colunas mínimas
-    colunas_out = ["Pedido", "OC", "SUBELEMENTO", "Fornecedor", "Descrição",
+    colunas_out = ["DOTACAO", "OC", "SUBELEMENTO", "Fornecedor", "Descrição",
                    "Dotação", "Elemento", "STATUS", "MENSAGEM",
                    "EMPENHO_EXISTENTE", "DATA_PROCESSAMENTO"]
 
-    # Mapeia Subelemento → SUBELEMENTO (nome da coluna que o robô espera na coluna C)
+    # Renomeia colunas para o padrao que o robo espera
     df_out = df_selecionados.copy()
     if "Subelemento" in df_out.columns and "SUBELEMENTO" not in df_out.columns:
         df_out.rename(columns={"Subelemento": "SUBELEMENTO"}, inplace=True)
+    # Renomeia "Pedido" -> "DOTACAO" (nome que o robo usa na col A)
+    if "Pedido" in df_out.columns and "DOTACAO" not in df_out.columns:
+        df_out.rename(columns={"Pedido": "DOTACAO"}, inplace=True)
     if "OC" not in df_out.columns:
         df_out["OC"] = ""
-    # Se OC estiver vazio (empenho por dotacao), usa o valor de Pedido
-    if "Pedido" in df_out.columns:
-        mask_vazio = df_out["OC"].astype(str).str.strip().isin(["", "nan", "0"])
-        df_out.loc[mask_vazio, "OC"] = df_out.loc[mask_vazio, "Pedido"].astype(str)
+    if "DOTACAO" not in df_out.columns:
+        df_out["DOTACAO"] = ""
+    # Robo le DOTACAO (col A) OU OC (col B), nunca as duas.
+    # Se OC preenchido -> COM/LIC -> zerar DOTACAO para evitar conflito.
+    mask_oc_preenchido = df_out["OC"].astype(str).str.strip().isin(["", "nan", "0"]) == False
+    df_out.loc[mask_oc_preenchido, "DOTACAO"] = ""
     for c in ["STATUS", "MENSAGEM", "EMPENHO_EXISTENTE", "DATA_PROCESSAMENTO"]:
         if c not in df_out.columns:
             df_out[c] = ""
@@ -402,7 +407,11 @@ else:
     if "Selecionar" not in df_base.columns:
         df_base.insert(0, "Selecionar", False)
 
-    colunas_editor = ["Selecionar", "Pedido", "OC", "Fornecedor", "Descrição",
+    # Renomeia "Pedido" -> "DOTACAO" no dataframe de exibicao
+    if "Pedido" in df_base.columns and "DOTACAO" not in df_base.columns:
+        df_base.rename(columns={"Pedido": "DOTACAO"}, inplace=True)
+
+    colunas_editor = ["Selecionar", "DOTACAO", "OC", "Fornecedor", "Descrição",
                       "Dotação", "Elemento", "Subelemento", "STATUS"]
     colunas_editor = [c for c in colunas_editor if c in df_base.columns]
 
@@ -418,7 +427,7 @@ else:
 
     config = {
         "Selecionar": st.column_config.CheckboxColumn("✅ Selecionar", default=False, width="small"),
-        "Pedido":     st.column_config.TextColumn("Pedido",     width="small"),
+        "DOTACAO":    st.column_config.TextColumn("DOTACAO",    width="small"),
         "OC":         st.column_config.TextColumn("OC",         width="small"),
         "Fornecedor": st.column_config.TextColumn("Fornecedor", width="medium"),
         "Descrição":  st.column_config.TextColumn("Descrição",  width="large"),
