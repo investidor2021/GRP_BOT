@@ -402,6 +402,11 @@ else:
                       "Dotação", "Elemento", "Subelemento", "STATUS"]
     colunas_editor = [c for c in colunas_editor if c in df_base.columns]
 
+    # Garante que colunas de texto nao sejam inteiros (incompativel com TextColumn)
+    for col in ["Pedido", "OC", "Dotacao", "Elemento", "Subelemento", "STATUS"]:
+        if col in df_base.columns:
+            df_base[col] = df_base[col].astype(str).replace("nan", "")
+
     st.caption(f"📋 {len(df_base)} pedido(s) disponível(is). Marque os que deseja empenhar:")
 
     config = {
