@@ -410,6 +410,10 @@ else:
     # Renomeia "Pedido" -> "DOTACAO" no dataframe de exibicao
     if "Pedido" in df_base.columns and "DOTACAO" not in df_base.columns:
         df_base.rename(columns={"Pedido": "DOTACAO"}, inplace=True)
+    # Registros do COM/LIC: OC preenchida -> DOTACAO deve ficar vazia na exibicao
+    if "OC" in df_base.columns and "DOTACAO" in df_base.columns:
+        mask_oc = df_base["OC"].astype(str).str.strip().isin(["", "nan", "0"]) == False
+        df_base.loc[mask_oc, "DOTACAO"] = ""
 
     colunas_editor = ["Selecionar", "DOTACAO", "OC", "Fornecedor", "Descrição",
                       "Dotação", "Elemento", "Subelemento", "STATUS"]
