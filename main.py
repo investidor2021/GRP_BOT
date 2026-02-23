@@ -95,13 +95,20 @@ def atualizar_status_comlic(spreadsheet, pedido, oc, status, mensagem, empenho_e
     all_values = ws.get_all_values()
     agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    for i, row_vals in enumerate(all_values[1:], start=2):  # pula o cabeçalho
-        linha_pedido = row_vals[col_pedido - 1] if col_pedido else ""
-        linha_oc     = row_vals[col_oc - 1]     if col_oc     else ""
+    log.debug(f"Buscando no COM/LIC: Pedido='{pedido}' | OC='{oc}'")
+
+    for i, row_vals in enumerate(all_values[1:], start=2):
+        linha_pedido = str(row_vals[col_pedido - 1]).strip() if col_pedido else ""
+        linha_oc     = str(row_vals[col_oc - 1]).strip()     if col_oc     else ""
 
         # Encontra pela OC ou pelo Pedido
-        if (str(oc).strip() and str(linha_oc).strip() == str(oc).strip()) or \
-           (str(pedido).strip() and str(linha_pedido).strip() == str(pedido).strip()):
+        # Importante: quando o empenho é por OC, o valor da OC IS o Pedido no COM/LIC
+        bate = (
+            (str(oc).strip()     and linha_oc     == str(oc).strip())     or  # OC col COM/LIC
+            (str(pedido).strip() and linha_pedido == str(pedido).strip()) or  # Pedido col COM/LIC
+            (str(oc).strip()     and linha_pedido == str(oc).strip())         # OC == Pedido COM/LIC
+        )
+        if bate:
 
             updates = []
             if col_status:
