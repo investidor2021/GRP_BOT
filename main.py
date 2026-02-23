@@ -9,7 +9,23 @@ from empenho_modal import preencher_empenho_oc, preencher_empenho_dotacao
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import os
+import logging
+import traceback
 from dotenv import load_dotenv
+
+# ============================
+# LOG
+# ============================
+LOG_PATH = os.path.join(os.path.dirname(__file__), "robo.log")
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_PATH, encoding="utf-8"),
+        logging.StreamHandler(),          # também imprime no console/Streamlit
+    ]
+)
+log = logging.getLogger(__name__)
 
 # Carrega variáveis do arquivo .env (se existir)
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
@@ -39,7 +55,9 @@ def ler_empenhar_como_df(spreadsheet):
     ws = spreadsheet.worksheet(ABA_EMPENHAR)
     records = ws.get_all_records()
     df = pd.DataFrame(records)
-    print(f"📋 {len(df)} linhas lidas da aba '{ABA_EMPENHAR}'")
+    log.info(f"📋 {len(df)} linhas lidas da aba '{ABA_EMPENHAR}'")
+    log.debug(f"Colunas: {list(df.columns)}")
+    log.debug(f"Dados:\n{df.to_string()}")
     return df, ws
 
 
@@ -123,12 +141,12 @@ def executar_empenhos(page, spreadsheet):
         tem_oc      = oc      != "" and oc.lower()      != "nan"
         tem_dotacao = dotacao != "" and dotacao.lower() != "nan"
 
-        print(f"➡️ Linha {idx + 1} | Pedido={pedido} | OC={oc}")
+        log.info(f"➡️ Linha {idx + 1} | Pedido={pedido} | OC={oc} | DOTACAO={dotacao}")
 
         try:
             # OC
             if tem_oc and not tem_dotacao:
-                print("🧾 Tipo: OC")
+                log.info("🧾 Tipo: OC")
                 resultado = preencher_empenho_oc(page, row, row)
 
                 if isinstance(resultado, tuple):
@@ -136,7 +154,7 @@ def executar_empenhos(page, spreadsheet):
                 else:
                     status, info = resultado, None
 
-                print("🎯 Status:", status, "| Empenho:", info)
+                log.info(f"🎯 Status: {status} | Empenho: {info}")
 
                 if status == "SEM_SALDO":
                     msg = "OC sem saldo suficiente"
@@ -157,7 +175,7 @@ def executar_empenhos(page, spreadsheet):
 
             # DOTAÇÃO
             elif tem_dotacao and not tem_oc:
-                print("📂 Tipo: DOTAÇÃO")
+                log.info("📂 Tipo: DOTAÇÃO")
                 status, info = preencher_empenho_dotacao(page, row, DRY_RUN)
                 msg = "Empenho por dotação realizado com sucesso"
                 registrar_resultado(df, idx, status, msg)
@@ -167,22 +185,25 @@ def executar_empenhos(page, spreadsheet):
 
             elif tem_oc and tem_dotacao:
                 msg = "Linha possui OC e DOTACAO preenchidos ao mesmo tempo"
+                log.warning(f"⚠️ {msg} — Linha {idx + 1}")
                 registrar_resultado(df, idx, "ERRO", msg)
                 atualizar_status_comlic(spreadsheet, pedido, oc, "ERRO", msg, None)
 
             else:
                 msg = "Linha não possui nem OC nem DOTACAO"
+                log.warning(f"⚠️ {msg} — Linha {idx + 1}")
                 registrar_resultado(df, idx, "ERRO", msg)
                 atualizar_status_comlic(spreadsheet, pedido, oc, "ERRO", msg, None)
 
         except Exception as e:
-            print(f"❌ Erro na linha {idx + 1}: {e}")
+            tb = traceback.format_exc()
+            log.error(f"❌ Erro na linha {idx + 1}: {e}\n{tb}")
             msg = str(e)
             registrar_resultado(df, idx, "ERRO_AUTOMACAO", msg)
             atualizar_status_comlic(spreadsheet, pedido, oc, "ERRO_AUTOMACAO", msg, None)
             continue
 
-    print("✅ Todos os empenhos processados")
+    log.info("✅ Todos os empenhos processados")
 
 
 # ============================
@@ -190,26 +211,43 @@ def executar_empenhos(page, spreadsheet):
 # ============================
 
 def main():
+    log.info("=" * 60)
+    log.info(f"🤖 Robô iniciado em {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    log.info(f"📄 Log salvo em: {LOG_PATH}")
+    log.info("=" * 60)
+
     # Credenciais lidas do .env (nunca hardcode aqui!)
     usuario = os.getenv("GRP_USUARIO")
     senha   = os.getenv("GRP_SENHA")
 
     if not usuario or not senha:
+        log.error("❌ Variáveis GRP_USUARIO e GRP_SENHA não encontradas.")
         raise EnvironmentError(
             "❌ Variáveis GRP_USUARIO e GRP_SENHA não encontradas. "
             "Crie o arquivo .env na raiz do projeto com essas variáveis."
         )
 
-    spreadsheet = conectar_sheets()
+    try:
+        spreadsheet = conectar_sheets()
+        log.info("✅ Conectado ao Google Sheets")
 
-    browser, context, page = criar_pagina()
+        browser, context, page = criar_pagina()
+        log.info("✅ Navegador iniciado")
 
-    login_grp(page, usuario, senha)
-    ir_para_empenhos(page)
+        login_grp(page, usuario, senha)
+        log.info("✅ Login realizado")
 
-    executar_empenhos(page, spreadsheet)
+        ir_para_empenhos(page)
+        log.info("✅ Navegou para empenhos")
 
-    print("✅ Robô finalizado")
+        executar_empenhos(page, spreadsheet)
+
+        log.info("✅ Robô finalizado com sucesso")
+
+    except Exception as e:
+        tb = traceback.format_exc()
+        log.critical(f"💥 Erro fatal no robô: {e}\n{tb}")
+        raise
 
 
 if __name__ == "__main__":
