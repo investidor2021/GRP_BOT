@@ -91,9 +91,17 @@ def conectar_sheets():
         "https://spreadsheets.google.com/feeds",
         "https://www.googleapis.com/auth/drive"
     ]
-    creds  = ServiceAccountCredentials.from_json_keyfile_name(CREDENCIAIS_PATH, scope)
+    if os.path.exists(CREDENCIAIS_PATH):
+        # Execução local: usa o arquivo credenciais.json
+        creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENCIAIS_PATH, scope)
+    else:
+        # Streamlit Cloud: usa st.secrets["gcp_service_account"]
+        import json
+        info = dict(st.secrets["gcp_service_account"])
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(info, scope)
     client = gspread.authorize(creds)
     return client.open_by_key(SPREADSHEET_KEY)
+
 
 
 @st.cache_data(ttl=60)
