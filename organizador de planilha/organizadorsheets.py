@@ -112,7 +112,15 @@ def carregar_pendentes_comlic():
     """Carrega registros do COM/LIC onde STATUS está vazio ou é PENDENTE."""
     spreadsheet = conectar_sheets()
     ws = spreadsheet.worksheet(ABA_COMLIC)
-    records = ws.get_all_records()
+
+    expected_headers = [
+        "Pedido", "Fornecedor", "Descrição", "Dotação",
+        "Elemento", "Subelemento", "Descrição Subelemento",
+        "Confiabilidade", "STATUS", "MENSAGEM",
+        "EMPENHO_EXISTENTE", "DATA_PROCESSAMENTO"
+    ]
+
+    records = ws.get_all_records(expected_headers=expected_headers)
     df = pd.DataFrame(records)
     if df.empty:
         return df
