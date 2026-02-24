@@ -65,15 +65,14 @@ def conectar_sheets():
             
             # Se for string (colado com aspas """), tentamos JSON
             if isinstance(info, str):
-                info_clean = info.replace("\n", "\\n").replace("\r", "")
                 try:
-                    info = json.loads(info_clean)
+                    info = json.loads(info.strip(), strict=False)
                 except Exception as e:
                     import ast
                     try:
-                        info = ast.literal_eval(info_clean)
+                        info = ast.literal_eval(info.strip())
                     except Exception:
-                        raise ValueError(f"Formato JSON inválido. Erro: {e}. Texto lido: {info_clean[:80]}...")
+                        raise ValueError(f"Formato JSON inválido. Erro: {e}. Texto lido: {info[:80]}...")
             # Se for AttrDict (colado como chave=valor no TOML)
             elif hasattr(info, "to_dict"):
                 info = info.to_dict()

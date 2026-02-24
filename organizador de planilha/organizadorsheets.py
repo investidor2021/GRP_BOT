@@ -102,19 +102,18 @@ def conectar_sheets():
         # Se for string, tentamos fazer o parse JSON
         if isinstance(info, str):
             import json
-            # O Streamlit TOML pode interpretar o '\n' literalmente, quebrando o JSON.
-            # Convertendo literais de quebra de linha de volta ao formato JSON seguro "\\n"
-            info_clean = info.replace("\n", "\\n").replace("\r", "")
+            # Deixar o json resolver os espaços e quebras de linha original
             try:
-                info = json.loads(info_clean)
+                # remove espaços/tabs inuteis pra garantir
+                info = json.loads(info.strip(), strict=False)
             except Exception as e:
                 import ast
                 try:
-                    info = ast.literal_eval(info_clean)
+                    info = ast.literal_eval(info.strip())
                 except Exception:
                     if hasattr(st, "error"):
-                        st.error(f"⚠️ Erro ao ler credenciais: O texto colado em 'gcp_service_account' não é um JSON válido.\nComeço do texto lido: {info_clean[:80]}...")
-                    raise ValueError(f"Formato JSON inválido em gcp_service_account. Erro: {e}. Texto recebido: {info_clean[:80]}...")
+                        st.error(f"⚠️ Erro ao ler credenciais: O texto colado em 'gcp_service_account' não é um JSON válido.\nComeço do texto lido: {info[:80]}...")
+                    raise ValueError(f"Formato JSON inválido em gcp_service_account. Erro: {e}. Texto recebido: {info[:80]}...")
         # Se já for um dicionário (o Streamlit converteu automaticamente de TOML)
         elif hasattr(info, "to_dict"):
             # Para st.secrets nativo (AttrDict)
