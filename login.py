@@ -12,7 +12,7 @@ def login_grp(page, usuario, senha):
     campo_senha.fill(senha)
 
     # botão entrar
-    page.get_by_text("Entrar", exact=True).click()
+    page.get_by_text("Entrar", exact=True).click(force=True)
     page.wait_for_load_state("networkidle")
 
     campo_usuario = page.locator("input[name='username']")
@@ -25,5 +25,5 @@ def login_grp(page, usuario, senha):
     campo_senha.fill(senha)
 
     # botão entrar
-    page.get_by_text("Entrar", exact=True).click()
+    page.get_by_text("Entrar", exact=True).click(force=True)
     page.wait_for_load_state("networkidle")
