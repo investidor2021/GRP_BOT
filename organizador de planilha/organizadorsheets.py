@@ -575,6 +575,15 @@ else:
             log_area = st.empty()
             log_lines = []
 
+            with st.spinner("Instalando/Verificando dependências do navegador (Playwright)..."):
+                try:
+                    subprocess.run(
+                        [sys.executable, "-m", "playwright", "install", "chromium"],
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=True
+                    )
+                except Exception as e:
+                    st.warning(f"Aviso na instalação do Playwright: {e}")
+
             with st.spinner("🤖 Robô em execução... aguarde."):
                 try:
                     # Prepara o ambiente injetando os secrets do Streamlit
