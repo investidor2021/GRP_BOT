@@ -62,8 +62,13 @@ def conectar_sheets():
             import streamlit as st
             import json
             info = st.secrets["gcp_service_account"]
+            
+            # Se for string (colado com aspas """), tentamos JSON
             if isinstance(info, str):
                 info = json.loads(info)
+            # Se for AttrDict (colado como chave=valor no TOML)
+            elif hasattr(info, "to_dict"):
+                info = info.to_dict()
             else:
                 info = dict(info)
             creds = ServiceAccountCredentials.from_json_keyfile_dict(info, scope)

@@ -98,9 +98,17 @@ def conectar_sheets():
         # Streamlit Cloud: usa st.secrets["gcp_service_account"]
         import json
         info = st.secrets["gcp_service_account"]
+        
+        # Se for string, tentamos fazer o parse JSON
         if isinstance(info, str):
+            import json
             info = json.loads(info)
+        # Se já for um dicionário (o Streamlit converteu automaticamente de TOML)
+        elif hasattr(info, "to_dict"):
+            # Para st.secrets nativo (AttrDict)
+            info = info.to_dict()
         else:
+            # Fallback geral
             info = dict(info)
         creds = ServiceAccountCredentials.from_json_keyfile_dict(info, scope)
     client = gspread.authorize(creds)
