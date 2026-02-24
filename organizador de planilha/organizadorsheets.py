@@ -556,11 +556,25 @@ else:
                 try:
                     # Prepara o ambiente injetando os secrets do Streamlit
                     custom_env = os.environ.copy()
+                    
+                    # LOG PARA DEBUG: Mostrar as chaves disponíveis nos secrets pro usuário ver
+                    try:
+                        chaves_disponiveis = list(st.secrets.keys())
+                        st.warning(f"Chaves de secrets encontradas no Streamlit: {chaves_disponiveis}")
+                    except Exception as e:
+                        st.error(f"Erro ao ler chaves do secrets: {e}")
+
                     try:
                         if "GRP_USUARIO" in st.secrets:
                             custom_env["GRP_USUARIO"] = str(st.secrets["GRP_USUARIO"])
                         if "GRP_SENHA" in st.secrets:
                             custom_env["GRP_SENHA"] = str(st.secrets["GRP_SENHA"])
+                        
+                        # Tenta pegar tudo de forma genérica para garantir
+                        for k, v in st.secrets.items():
+                            if isinstance(v, (str, int, float, bool)):
+                                custom_env[k] = str(v)
+                            
                     except Exception:
                         pass
 
