@@ -668,4 +668,3 @@ else:
                     st.info(f"🔄 {len(df_updated)} pedido(s) ainda pendente(s) no COM/LIC.")
                 else:
                     st.success("🎉 Nenhum pedido pendente restante no COM/LIC!")
-```
