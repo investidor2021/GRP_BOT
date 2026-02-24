@@ -41,3 +41,17 @@ def login_grp(page, usuario, senha):
     except Exception as e:
         # Se os campos não existem mais, significa que o primeiro login teve sucesso imediato!
         pass
+        
+    # VERIFICAÇÃO FINAL DE LOGIN
+    page.wait_for_timeout(3000) # Espera a rede assentar
+    
+    if "login" in page.url.lower():
+        # Se ainda estiver na página de login, algo deu errado (senha errada, bloqueio, etc)
+        # Tenta pegar alguma mensagem de erro na tela para reportar
+        erro_msg = "Aviso: O GRP recusou o login."
+        if page.locator(".toast-message").is_visible():
+            erro_msg = page.locator(".toast-message").inner_text()
+        elif page.locator(".alert, .error, .msg-erro").count() > 0:
+            erro_msg = page.locator(".alert, .error, .msg-erro").first.inner_text()
+            
+        raise Exception(f"Falha na Autenticação! O GRP não deixou logar. O robô continua na página de login. Mensagem do site: {erro_msg}")
