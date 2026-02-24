@@ -142,6 +142,19 @@ def carregar_pendentes_comlic():
     return df.reset_index(drop=True)
 
 
+def carregar_aba_padrao(nome_aba):
+    """Carrega todos os registros de uma aba Padrão da planilha."""
+    spreadsheet = conectar_sheets()
+    ws = spreadsheet.worksheet(nome_aba)
+    records = ws.get_all_records()
+    df = pd.DataFrame(records)
+    if df.empty:
+        return df
+    # Remove linhas completamente em branco
+    df = df[df.apply(lambda r: any(str(v).strip() not in ["", "nan"] for v in r), axis=1)]
+    return df.reset_index(drop=True)
+
+
 def gravar_comlic(df_novos):
     """Grava apenas OCs novas na aba COM/LIC (sem duplicar)."""
     spreadsheet = conectar_sheets()
@@ -382,22 +395,46 @@ if uploaded_file:
 st.divider()
 
 # ============================================================
-# SEÇÃO B — Carregar Pendentes do COM/LIC
+# SEÇÃO B — Carregar Dados para Empenhar
 # ============================================================
-st.markdown('<div class="section-header">🔄 Seção 2 — Carregar Pendentes do COM/LIC</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header">🔄 Seção 2 — Carregar Dados para Empenhar</div>', unsafe_allow_html=True)
+
+FONTES = {
+    "COM/LIC (Pendentes)": "__comlic__",
+    "Padrao Estudante":    "Padrao Estudante",
+    "Padrao Frente":       "Padrao Frente",
+    "Padrao Postinho":     "Padrao Postinho",
+    "Padrao Militar":      "Padrao Militar",
+}
 
 col_b1, col_b2 = st.columns([3, 1])
 with col_b1:
-    st.caption("Carrega registros do COM/LIC onde STATUS está vazio ou PENDENTE.")
+    fonte_sel = st.selectbox(
+        "Fonte de dados:",
+        options=list(FONTES.keys()),
+        key="fonte_dados"
+    )
 with col_b2:
-    if st.button("🔄 Carregar Pendentes", use_container_width=True):
-        with st.spinner("Buscando pendentes no COM/LIC..."):
-            df_pend = carregar_pendentes_comlic()
+    if st.button("🔄 Carregar", use_container_width=True):
+        aba_key = FONTES[fonte_sel]
+        if aba_key == "__comlic__":
+            with st.spinner("Buscando pendentes no COM/LIC..."):
+                df_pend = carregar_pendentes_comlic()
+            descricao = "pendente(s) no COM/LIC"
+        else:
+            with st.spinner(f"Carregando {fonte_sel}..."):
+                try:
+                    df_pend = carregar_aba_padrao(aba_key)
+                    descricao = f"registro(s) de '{fonte_sel}'"
+                except Exception as e:
+                    st.error(f"❌ Erro ao carregar aba '{aba_key}': {e}")
+                    df_pend = pd.DataFrame()
+                    descricao = ""
         if df_pend.empty:
-            st.info("ℹ️ Sem pendências no COM/LIC.")
+            st.info(f"ℹ️ Nenhum registro encontrado em '{fonte_sel}'.")
         else:
             st.session_state["df_para_empenhar"] = df_pend
-            st.success(f"✅ {len(df_pend)} pedido(s) pendente(s) carregado(s).")
+            st.success(f"✅ {len(df_pend)} {descricao} carregado(s).")
 
 st.divider()
 
