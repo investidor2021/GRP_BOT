@@ -235,11 +235,23 @@ def main():
     usuario = os.getenv("GRP_USUARIO")
     senha   = os.getenv("GRP_SENHA")
 
+    # Fallback para Streamlit Secrets se não encontrar no .env (útil para nuvem)
+    if not usuario or not senha:
+        try:
+            import streamlit as st
+            if "GRP_USUARIO" in st.secrets:
+                usuario = str(st.secrets["GRP_USUARIO"])
+            if "GRP_SENHA" in st.secrets:
+                senha = str(st.secrets["GRP_SENHA"])
+        except Exception:
+            pass
+
     if not usuario or not senha:
         log.error("❌ Variáveis GRP_USUARIO e GRP_SENHA não encontradas.")
         raise EnvironmentError(
             "❌ Variáveis GRP_USUARIO e GRP_SENHA não encontradas. "
-            "Crie o arquivo .env na raiz do projeto com essas variáveis."
+            "Crie o arquivo .env na raiz do projeto com essas variáveis "
+            "ou configure o Secrets se estiver usando Streamlit Cloud."
         )
 
     try:
