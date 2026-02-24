@@ -97,7 +97,11 @@ def conectar_sheets():
     else:
         # Streamlit Cloud: usa st.secrets["gcp_service_account"]
         import json
-        info = dict(st.secrets["gcp_service_account"])
+        info = st.secrets["gcp_service_account"]
+        if isinstance(info, str):
+            info = json.loads(info)
+        else:
+            info = dict(info)
         creds = ServiceAccountCredentials.from_json_keyfile_dict(info, scope)
     client = gspread.authorize(creds)
     return client.open_by_key(SPREADSHEET_KEY)

@@ -60,7 +60,12 @@ def conectar_sheets():
         # Streamlit Cloud: usa st.secrets["gcp_service_account"]
         try:
             import streamlit as st
-            info = dict(st.secrets["gcp_service_account"])
+            import json
+            info = st.secrets["gcp_service_account"]
+            if isinstance(info, str):
+                info = json.loads(info)
+            else:
+                info = dict(info)
             creds = ServiceAccountCredentials.from_json_keyfile_dict(info, scope)
         except Exception as e:
             raise FileNotFoundError(
