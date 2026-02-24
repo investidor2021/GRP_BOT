@@ -6,7 +6,12 @@ def ir_para_empenhos(page):
     )
 
     combo = page.locator("entidade-seletor input.dx-texteditor-input")
-    combo.wait_for(state="visible", timeout=60000)
+    try:
+        combo.wait_for(state="visible", timeout=60000)
+    except Exception as e:
+        page.screenshot(path="erro_tela_oracle.png", full_page=True)
+        raise Exception(f"Robô travou na URL: {page.url}\nTirou um 'print' da tela invisível e salvou como 'erro_tela_oracle.png' na pasta do servidor. Erro original: {e}")
+        
     combo.click()
     page.get_by_text("01 - [PMDVGDS] - PREFEITURA").click()
 
