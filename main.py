@@ -53,7 +53,21 @@ def conectar_sheets():
         "https://spreadsheets.google.com/feeds",
         "https://www.googleapis.com/auth/drive"
     ]
-    creds  = ServiceAccountCredentials.from_json_keyfile_name(CREDENCIAIS_PATH, scope)
+    if os.path.exists(CREDENCIAIS_PATH):
+        # Execução local: usa o arquivo credenciais.json
+        creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENCIAIS_PATH, scope)
+    else:
+        # Streamlit Cloud: usa st.secrets["gcp_service_account"]
+        try:
+            import streamlit as st
+            info = dict(st.secrets["gcp_service_account"])
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(info, scope)
+        except Exception as e:
+            raise FileNotFoundError(
+                f"Arquivo credenciais.json não encontrado em {CREDENCIAIS_PATH} e "
+                f"secrets gcp_service_account não configurados no Streamlit. Erro: {e}"
+            )
+            
     client = gspread.authorize(creds)
     return client.open_by_key(SPREADSHEET_KEY)
 

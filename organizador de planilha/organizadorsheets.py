@@ -574,6 +574,14 @@ else:
                         for k, v in st.secrets.items():
                             if isinstance(v, (str, int, float, bool)):
                                 custom_env[k] = str(v)
+
+                        # NOVO: se a pessoa colou as senhas DENTRO do dicionario JSON por engano
+                        if "gcp_service_account" in st.secrets:
+                            gcp_dict = dict(st.secrets["gcp_service_account"])
+                            if "GRP_USUARIO" in gcp_dict:
+                                custom_env["GRP_USUARIO"] = str(gcp_dict["GRP_USUARIO"])
+                            if "GRP_SENHA" in gcp_dict:
+                                custom_env["GRP_SENHA"] = str(gcp_dict["GRP_SENHA"])
                             
                     except Exception:
                         pass
