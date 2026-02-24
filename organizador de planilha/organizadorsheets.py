@@ -143,13 +143,24 @@ def carregar_pendentes_comlic():
 
 
 def carregar_aba_padrao(nome_aba):
-    """Carrega todos os registros de uma aba Padrão da planilha."""
+    """Carrega todos os registros de uma aba Padrão da planilha.
+    Usa get_all_values() para suportar abas com cabeçalhos vazios/duplicados."""
     spreadsheet = conectar_sheets()
     ws = spreadsheet.worksheet(nome_aba)
-    records = ws.get_all_records()
-    df = pd.DataFrame(records)
-    if df.empty:
-        return df
+    valores = ws.get_all_values()
+    if not valores or len(valores) < 2:
+        return pd.DataFrame()
+
+    headers = valores[0]
+    rows    = valores[1:]
+
+    # Descobre quais colunas têm cabeçalho não-vazio (descarta colunas sem nome)
+    indices_validos = [i for i, h in enumerate(headers) if str(h).strip() != ""]
+    headers_ok = [headers[i] for i in indices_validos]
+    rows_ok    = [[row[i] if i < len(row) else "" for i in indices_validos] for row in rows]
+
+    df = pd.DataFrame(rows_ok, columns=headers_ok)
+
     # Remove linhas completamente em branco
     df = df[df.apply(lambda r: any(str(v).strip() not in ["", "nan"] for v in r), axis=1)]
     return df.reset_index(drop=True)
