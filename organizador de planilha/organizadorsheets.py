@@ -554,6 +554,16 @@ else:
 
             with st.spinner("🤖 Robô em execução... aguarde."):
                 try:
+                    # Prepara o ambiente injetando os secrets do Streamlit
+                    custom_env = os.environ.copy()
+                    try:
+                        if "GRP_USUARIO" in st.secrets:
+                            custom_env["GRP_USUARIO"] = str(st.secrets["GRP_USUARIO"])
+                        if "GRP_SENHA" in st.secrets:
+                            custom_env["GRP_SENHA"] = str(st.secrets["GRP_SENHA"])
+                    except Exception:
+                        pass
+
                     proc = subprocess.Popen(
                         [sys.executable, os.path.abspath(MAIN_PY_PATH)],
                         stdout=subprocess.PIPE,
@@ -561,7 +571,8 @@ else:
                         text=True,
                         encoding="utf-8",
                         errors="replace",
-                        cwd=os.path.dirname(os.path.abspath(MAIN_PY_PATH))
+                        cwd=os.path.dirname(os.path.abspath(MAIN_PY_PATH)),
+                        env=custom_env
                     )
                     for line in proc.stdout:
                         log_lines.append(line.rstrip())
