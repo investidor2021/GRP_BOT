@@ -1,6 +1,8 @@
 def ir_para_empenhos(page):
     page.goto(
-        "https://sistemas.vgsul.sp.gov.br/GRP/home/ctp/despesa/documentodespesa"
+        "https://sistemas.vgsul.sp.gov.br/GRP/home/ctp/despesa/documentodespesa",
+        wait_until="domcontentloaded",
+        timeout=60000
     )
 
     combo = page.locator("entidade-seletor input.dx-texteditor-input")

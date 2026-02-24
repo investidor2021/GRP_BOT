@@ -1,5 +1,9 @@
 def login_grp(page, usuario, senha):
-    page.goto("https://sistemas.vgsul.sp.gov.br/GRP/login")
+    page.goto(
+        "https://sistemas.vgsul.sp.gov.br/GRP/login",
+        wait_until="domcontentloaded",
+        timeout=60000
+    )
 
     # usuário
     campo_usuario = page.locator("input[name='username']")
