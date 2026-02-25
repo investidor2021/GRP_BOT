@@ -558,43 +558,44 @@ else:
     config = { "Selecionar": st.column_config.CheckboxColumn("✅ Selecionar", default=False, width="small") }
     for col in colunas_editor:
         if col != "Selecionar":
-            # Dá mais espaço para colunas de descrição/histórico
-            width_type = "large" if col.upper() in ["DESCRIÇÃO", "HISTORICO", "FORNECEDOR", "CREDOR"] else "medium"
+            # Sem forçar "medium", deixa o Streamlit encaixar no texto/cabeçalho
+            width_type = "large" if col.upper() in ["DESCRIÇÃO", "HISTORICO", "FORNECEDOR", "CREDOR"] else None
             config[col] = st.column_config.TextColumn(col, width=width_type)
 
-    # === EDIÇÃO EM LOTE PARA PADRÕES ===
-    fonte_atual = st.session_state.get("fonte_dados", "")
-    if fonte_atual and "Padrao" in fonte_atual:
-        st.markdown("---")
-        st.markdown("**✏️ Edição em Lote (Aplicar nas linhas selecionadas ativas abaixo):**")
-        col_lote1, col_lote2, col_lote3, col_lote4 = st.columns([2, 2, 4, 3])
-        with col_lote1:
-            lote_data = st.text_input("Data:", key="lote_data", placeholder="Ex: 01/01/2026")
-        with col_lote2:
-            lote_valor = st.text_input("Valor:", key="lote_valor", placeholder="Ex: 2500,00")
-        with col_lote3:
-            lote_hist = st.text_input("Histórico:", key="lote_hist")
-        with col_lote4:
-            st.write("") # Espaçamento para alinhar o botão
-            st.write("")
-            aplicar_lote = st.button("🔽 Aplicar aos Selecionados", use_container_width=True)
-
-        if aplicar_lote:
-            linhas_sel = df_base["Selecionar"] == True
-            n_linhas = linhas_sel.sum()
-            if n_linhas == 0:
-                st.warning("⚠️ Selecione ao menos uma linha na tabela abaixo dando um 'Tique' antes de aplicar.")
-            else:
-                if lote_data.strip():  df_base.loc[linhas_sel, "DATA"] = lote_data.strip()
-                if lote_valor.strip(): df_base.loc[linhas_sel, "VALOR"] = lote_valor.strip()
-                if lote_hist.strip():  df_base.loc[linhas_sel, "HISTORICO"] = lote_hist.strip()
-                
-                st.session_state["df_para_empenhar"] = df_base
-                st.success(f"✅ Valores preenchidos automaticamente em {n_linhas} linha(s)!")
-                st.rerun()
+    # === BOTÕES RÁPIDOS (Fora do form para forçar refresh na tela) ===
+    col_sel1, col_sel2, _ = st.columns([2, 5, 5])
+    with col_sel1:
+         if st.button("☑️ Selecionar Todas Visíveis", use_container_width=True):
+             df_base.loc[df_base_display.index, "Selecionar"] = True
+             st.session_state["df_para_empenhar"] = df_base
+             st.rerun()
+    with col_sel2:
+         if st.button("🔲 Desmarcar Todas Visíveis", use_container_width=True):
+             df_base.loc[df_base_display.index, "Selecionar"] = False
+             st.session_state["df_para_empenhar"] = df_base
+             st.rerun()
 
     # O Formulario trava o recarregamento irritante da página a cada clique
     with st.form("form_tabela_empenhos"):
+        
+        # === EDIÇÃO EM LOTE PARA PADRÕES (DENTRO DO FORM PARA VER OS TIQUES) ===
+        fonte_atual = st.session_state.get("fonte_dados", "")
+        if fonte_atual and "Padrao" in fonte_atual:
+            st.markdown("**✏️ Edição em Lote (Aplicar nas linhas com 'Tique' ativas abaixo):**")
+            col_lote1, col_lote2, col_lote3, col_lote4 = st.columns([2, 2, 4, 3])
+            with col_lote1:
+                lote_data = st.text_input("Data:", key="lote_data", placeholder="Ex: 01/01/2026")
+            with col_lote2:
+                lote_valor = st.text_input("Valor:", key="lote_valor", placeholder="Ex: 2500,00")
+            with col_lote3:
+                lote_hist = st.text_input("Histórico:", key="lote_hist")
+            with col_lote4:
+                st.write("") # Espaçamento para alinhar o botão ao Text Input
+                st.write("")
+                aplicar_lote = st.form_submit_button("🔽 Aplicar aos Selecionados", use_container_width=True)
+        else:
+            aplicar_lote = False
+
         df_editado = st.data_editor(
             df_base_display[colunas_editor],
             column_config=config,
@@ -606,19 +607,36 @@ else:
         st.write("---")
         rodar_form = st.form_submit_button("▶️ Confirmar Seleções e Rodar Robô", type="primary", use_container_width=True)
 
-    if rodar_form:
+    # LÓGICA DE PROCESSAMENTO DOS BOTÕES DO FORMULÁRIO (DEPOIS DE CLICADOS)
+    if aplicar_lote or rodar_form:
         # Pega a identidade real das linhas que foram "ticadas" no momento do envio do formulário
         df_base.loc[df_editado.index, "Selecionar"] = df_editado["Selecionar"]
         st.session_state["df_para_empenhar"] = df_base
         
         df_selecionados = df_base[df_base["Selecionar"] == True].copy()
         n_sel = len(df_selecionados)
-        
-        if n_sel == 0:
-            st.warning("⚠️ Selecione ao menos um pedido dando um 'Tique' na caixinha antes de rodar.")
-            st.stop()
-        else:
-            rodar = True # Força a variavel rodar para iniciar o bloco de execução abaixo
+
+        # Se clicou apenas em Aplicar Lote
+        if aplicar_lote:
+            linhas_sel = df_editado.index[df_editado["Selecionar"] == True]
+            if len(linhas_sel) == 0:
+                st.warning("⚠️ Selecione ao menos uma linha na tabela dando um 'Tique' antes de aplicar o Lote.")
+            else:
+                if lote_data.strip():  df_base.loc[linhas_sel, "DATA"] = lote_data.strip()
+                if lote_valor.strip(): df_base.loc[linhas_sel, "VALOR"] = lote_valor.strip()
+                if lote_hist.strip():  df_base.loc[linhas_sel, "HISTORICO"] = lote_hist.strip()
+                
+                st.session_state["df_para_empenhar"] = df_base
+                st.success(f"✅ Valores em lote preenchidos em {len(linhas_sel)} linha(s)!")
+                st.rerun()
+
+        # Se clicou em Rodar Robô
+        if rodar_form:
+            if n_sel == 0:
+                st.warning("⚠️ Selecione ao menos um pedido dando um 'Tique' na caixinha antes de rodar.")
+                st.stop()
+            else:
+                rodar = True # Força a variavel rodar para iniciar o bloco de execução abaixo
     else:
         rodar = False
 
