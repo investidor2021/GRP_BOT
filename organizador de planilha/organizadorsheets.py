@@ -526,13 +526,16 @@ else:
         "STATUS":     st.column_config.TextColumn("Status",     width="small"),
     }
 
-    df_editado = st.data_editor(
-        df_base[colunas_editor],
-        column_config=config,
-        hide_index=True,
-        use_container_width=True,
-        key="tabela_empenhos"
-    )
+    # Cria um formulário para agrupar as seleções e não recarregar a cada clique
+    with st.form("form_selecao_empenhos"):
+        df_editado = st.data_editor(
+            df_base[colunas_editor],
+            column_config=config,
+            hide_index=True,
+            use_container_width=True,
+            key="tabela_empenhos"
+        )
+        submit_selecoes = st.form_submit_button("✅ Salvar Minhas Seleções Adicionadas", type="secondary")
 
     # Usa a selecao do editor sem conflitar com o key; pega as linhas completas de df_base
     mask_sel = df_editado["Selecionar"].values
