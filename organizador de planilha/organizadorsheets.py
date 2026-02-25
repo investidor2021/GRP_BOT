@@ -305,11 +305,15 @@ def extrair_dados_pdf(uploaded_file, df_dotacao, df_keywords):
             r"ITEM\s+DESCRIÇÃO.*?\n\s*\d+\s+(.+?)\s+\d+,\d+", bloco, re.DOTALL
         )
 
-        pedido       = pedido_match.group(1)     if pedido_match     else ""
+        pedido       = pedido_match.group(1).strip() if pedido_match else ""
         fornecedor   = fornecedor_match.group(1).strip() if fornecedor_match else ""
-        dotacao_num  = dotacao_match.group(1)    if dotacao_match    else ""
-        dotacao_comp = dotacao_match.group(2)    if dotacao_match    else ""
+        dotacao_num  = dotacao_match.group(1).strip() if dotacao_match else ""
+        dotacao_comp = dotacao_match.group(2).strip() if dotacao_match else ""
         descricao    = descricao_match.group(1).strip() if descricao_match else ""
+
+        # Sanitiza rigorosamente o número do pedido (OC) para evitar problemas na planilha e no GRP
+        if pedido:
+            pedido = re.sub(r"[^\d]", "", pedido) # Garante que só fiquem números (ex: remove .0 ou espaços perdidos)
 
         elemento      = extrair_elemento(dotacao_comp)
         codigo_sub, nome_sub, score = "", "", 0
@@ -507,9 +511,8 @@ else:
     if "DOTACAO" not in df_base.columns:
         df_base["DOTACAO"] = ""
 
-    colunas_editor = ["Selecionar", "DOTACAO", "OC", "Fornecedor", "Descrição",
-                      "Dotação", "Elemento", "Subelemento", "STATUS"]
-    colunas_editor = [c for c in colunas_editor if c in df_base.columns]
+    # Pega TODAS as colunas que vieram da aba carregada, mantendo "Selecionar" em primeiro
+    colunas_editor = ["Selecionar"] + [c for c in df_base.columns if c != "Selecionar"]
 
     # --- NOVO FILTRO DE PEDIDO (OC) ---
     filtro_pedido = st.text_input("🔍 Filtrar por Número do Pedido / OC:", "")
@@ -528,20 +531,18 @@ else:
     # Subelemento deve sempre ter 2 digitos (ex: 7 -> 07)
     if 'Subelemento' in df_base_display.columns:
         df_base_display['Subelemento'] = df_base_display['Subelemento'].astype(str).str.strip().str.zfill(2)
+    elif 'SUBELEMENTO' in df_base_display.columns:
+        df_base_display['SUBELEMENTO'] = df_base_display['SUBELEMENTO'].astype(str).str.strip().str.zfill(2)
 
     st.caption(f"📋 {len(df_base_display)} pedido(s) correspondente(s) aos filtros. Marque os que deseja empenhar:")
 
-    config = {
-        "Selecionar": st.column_config.CheckboxColumn("✅ Selecionar", default=False, width="small"),
-        "DOTACAO":    st.column_config.TextColumn("DOTACAO",    width="small"),
-        "OC":         st.column_config.TextColumn("OC",         width="small"),
-        "Fornecedor": st.column_config.TextColumn("Fornecedor", width="medium"),
-        "Descrição":  st.column_config.TextColumn("Descrição",  width="large"),
-        "Dotação":    st.column_config.TextColumn("Dotação",    width="small"),
-        "Elemento":   st.column_config.TextColumn("Elemento",   width="small"),
-        "Subelemento":st.column_config.TextColumn("Subelemento",width="small"),
-        "STATUS":     st.column_config.TextColumn("Status",     width="small"),
-    }
+    # Cria configuração Dinâmica para abraçar TODAS as colunas da aba selecionada
+    config = { "Selecionar": st.column_config.CheckboxColumn("✅ Selecionar", default=False, width="small") }
+    for col in colunas_editor:
+        if col != "Selecionar":
+            # Dá mais espaço para colunas de descrição/histórico
+            width_type = "large" if col.upper() in ["DESCRIÇÃO", "HISTORICO", "FORNECEDOR", "CREDOR"] else "medium"
+            config[col] = st.column_config.TextColumn(col, width=width_type)
 
     # O Formulario trava o recarregamento irritante da página a cada clique
     with st.form("form_tabela_empenhos"):
