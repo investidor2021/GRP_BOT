@@ -204,6 +204,13 @@ def carregar_aba_padrao(nome_aba):
 
     # Remove linhas completamente em branco
     df = df[df.apply(lambda r: any(str(v).strip() not in ["", "nan"] for v in r), axis=1)]
+    
+    # Garante que as colunas essenciais para os Padrões existam e fiquem do meio pro fim
+    colunas_essenciais = ["DATA", "VALOR", "HISTORICO", "STATUS", "MENSAGEM", "EMPENHO_EXISTENTE", "DATA_PROCESSAMENTO"]
+    for col in colunas_essenciais:
+        if col not in df.columns:
+            df[col] = ""
+            
     return df.reset_index(drop=True)
 
 
@@ -554,6 +561,37 @@ else:
             # Dá mais espaço para colunas de descrição/histórico
             width_type = "large" if col.upper() in ["DESCRIÇÃO", "HISTORICO", "FORNECEDOR", "CREDOR"] else "medium"
             config[col] = st.column_config.TextColumn(col, width=width_type)
+
+    # === EDIÇÃO EM LOTE PARA PADRÕES ===
+    fonte_atual = st.session_state.get("fonte_dados", "")
+    if fonte_atual and "Padrao" in fonte_atual:
+        st.markdown("---")
+        st.markdown("**✏️ Edição em Lote (Aplicar nas linhas selecionadas ativas abaixo):**")
+        col_lote1, col_lote2, col_lote3, col_lote4 = st.columns([2, 2, 4, 3])
+        with col_lote1:
+            lote_data = st.text_input("Data:", key="lote_data", placeholder="Ex: 01/01/2026")
+        with col_lote2:
+            lote_valor = st.text_input("Valor:", key="lote_valor", placeholder="Ex: 2500,00")
+        with col_lote3:
+            lote_hist = st.text_input("Histórico:", key="lote_hist")
+        with col_lote4:
+            st.write("") # Espaçamento para alinhar o botão
+            st.write("")
+            aplicar_lote = st.button("🔽 Aplicar aos Selecionados", use_container_width=True)
+
+        if aplicar_lote:
+            linhas_sel = df_base["Selecionar"] == True
+            n_linhas = linhas_sel.sum()
+            if n_linhas == 0:
+                st.warning("⚠️ Selecione ao menos uma linha na tabela abaixo dando um 'Tique' antes de aplicar.")
+            else:
+                if lote_data.strip():  df_base.loc[linhas_sel, "DATA"] = lote_data.strip()
+                if lote_valor.strip(): df_base.loc[linhas_sel, "VALOR"] = lote_valor.strip()
+                if lote_hist.strip():  df_base.loc[linhas_sel, "HISTORICO"] = lote_hist.strip()
+                
+                st.session_state["df_para_empenhar"] = df_base
+                st.success(f"✅ Valores preenchidos automaticamente em {n_linhas} linha(s)!")
+                st.rerun()
 
     # O Formulario trava o recarregamento irritante da página a cada clique
     with st.form("form_tabela_empenhos"):
