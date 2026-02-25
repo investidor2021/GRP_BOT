@@ -73,19 +73,33 @@ def preencher_empenho_oc(page, row, registro):
     #salvar_e_fechar(page)
 
 def salvar_e_fechar(page):
+    import time
     page.click("text=Salvar/Fechar")
 
     btn_nao = page.locator(
         "div.dx-button:has(span.dx-button-text:has-text('Não'))"
     )
 
-    try:
-        btn_nao.wait_for(state="attached", timeout=5000)
-        btn_nao.click()
-    except:
-        pass
-
+    # Dupla verificação com loop para fechar o popup teimoso
+    max_tentativas = 5
+    for tentativa in range(max_tentativas):
+        try:
+            # Espera até 3 segundos pelo botão aparecer
+            btn_nao.wait_for(state="attached", timeout=3000)
+            if btn_nao.is_visible():
+                print(f"Tentativa {tentativa+1} de clicar em 'Não'...")
+                btn_nao.click(force=True)
+                page.wait_for_timeout(1000) # Dá 1 segundo pro sistema reagir
+            
+            # Verifica se o botão sumiu da tela
+            if not btn_nao.is_visible():
+                print("Popup fechado com sucesso!")
+                break
+        except Exception as e:
+            # Se deu timeout esperando o botão, significa que ele já fechou ou nem apareceu
+            if not btn_nao.is_visible():
+                print("Botão 'Não' não está mais na tela.")
+                break
+            
     page.wait_for_timeout(500)
-
-
 
