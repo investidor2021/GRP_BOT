@@ -543,30 +543,30 @@ else:
         "STATUS":     st.column_config.TextColumn("Status",     width="small"),
     }
 
-    # Cria um formulário para agrupar as seleções e não recarregar a cada clique
-    with st.form("form_selecao_empenhos"):
-        df_editado = st.data_editor(
-            df_base_display[colunas_editor],
-            column_config=config,
-            hide_index=True,
-            use_container_width=True,
-            key="tabela_empenhos"
-        )
-        submit_selecoes = st.form_submit_button("✅ Salvar Minhas Seleções Adicionadas", type="secondary")
+    # Volta pro formato original sem Form, pois o form trava o botão "Rodar Robô"
+    df_editado = st.data_editor(
+        df_base_display[colunas_editor],
+        column_config=config,
+        hide_index=True,
+        use_container_width=True,
+        key="tabela_empenhos"
+    )
 
-    # Atualizar o df_base com as seleções feitas no df_editado (filtrado)
-    if submit_selecoes:
-        # Pega a OC dos itens selecionados na view atual
-        ocs_selecionadas = df_editado[df_editado["Selecionar"] == True]["OC"].tolist()
-        
-        # Opcional: Desmarcar tudo antes (apenas se quiser que a busca resete tudo)
-        # df_base["Selecionar"] = False
-        
-        # Marca como TRUE os que foram selecionados no filtro
-        df_base.loc[df_base["OC"].isin(ocs_selecionadas), "Selecionar"] = True
-        st.session_state["df_para_empenhar"] = df_base
+    # Identifica em TEMPO REAL as OCs que estão marcadas no Filtro de Tela atual
+    ocs_marcadas_tela = df_editado[df_editado["Selecionar"] == True]["OC"].tolist()
+    
+    # Atualiza a base global SOMENTE com os cliques da tela atual (garante que itens fora do filtro não se percam)
+    # Primeiro desmarca na base os que não estão mais selecionados na tela atual
+    ocs_na_tela_atual = df_editado["OC"].tolist()
+    df_base.loc[df_base["OC"].isin(ocs_na_tela_atual), "Selecionar"] = False
+    
+    # E então marca como TRUE os que estão selecionados na tela atual
+    df_base.loc[df_base["OC"].isin(ocs_marcadas_tela), "Selecionar"] = True
 
-    # Calcula totais para o botão de rodar baseado na base REAL COMPLETA, não só no filtro
+    # Salva na sessão
+    st.session_state["df_para_empenhar"] = df_base
+
+    # Calcula totais globais para liberar o botão
     df_selecionados = df_base[df_base["Selecionar"] == True].copy()
     n_sel = len(df_selecionados)
 
