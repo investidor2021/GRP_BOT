@@ -159,10 +159,9 @@ def carregar_pendentes_comlic():
     # Remove linhas completamente vazias (linhas em branco da planilha)
     df = df[df["Pedido"].astype(str).str.strip().replace("nan", "") != ""]
 
-    if "STATUS" in df.columns:
-        mask = df["STATUS"].astype(str).str.strip().isin(["", "PENDENTE"])
-        df = df[mask].copy()
-        
+    # A PEDIDO: Removido o filtro de STATUS ("Pendente"). 
+    # Agora a única regra que esconde o pedido é se ele já foi empenhado.
+    
     # NOVA REGRA: Filtrar também se a coluna 'EMPENHO_EXISTENTE' (coluna K) já estiver preenchida.
     # Se tiver um número lá, significa que já é um empenho no GRP e não deve aparecer na lista de pendentes.
     if "EMPENHO_EXISTENTE" in df.columns:
@@ -512,15 +511,25 @@ else:
                       "Dotação", "Elemento", "Subelemento", "STATUS"]
     colunas_editor = [c for c in colunas_editor if c in df_base.columns]
 
-    # Garante que colunas de texto nao sejam inteiros (incompativel com TextColumn)
-    for col in df_base.select_dtypes(include='integer').columns:
-        if col != 'Selecionar':
-            df_base[col] = df_base[col].astype(str).replace("nan", "")
-    # Subelemento deve sempre ter 2 digitos (ex: 7 -> 07)
-    if 'Subelemento' in df_base.columns:
-        df_base['Subelemento'] = df_base['Subelemento'].astype(str).str.strip().str.zfill(2)
+    # --- NOVO FILTRO DE PEDIDO (OC) ---
+    filtro_pedido = st.text_input("🔍 Filtrar por Número do Pedido / OC:", "")
+    
+    if filtro_pedido.strip():
+        # Filtra mantendo as linhas onde a OC contenha o texto digitado
+        mask_filtro = df_base["OC"].astype(str).str.contains(filtro_pedido.strip(), case=False, na=False)
+        df_base_display = df_base[mask_filtro].copy()
+    else:
+        df_base_display = df_base.copy()
 
-    st.caption(f"📋 {len(df_base)} pedido(s) disponível(is). Marque os que deseja empenhar:")
+    # Garante que colunas de texto nao sejam inteiros (incompativel com TextColumn)
+    for col in df_base_display.select_dtypes(include='integer').columns:
+        if col != 'Selecionar':
+            df_base_display[col] = df_base_display[col].astype(str).replace("nan", "")
+    # Subelemento deve sempre ter 2 digitos (ex: 7 -> 07)
+    if 'Subelemento' in df_base_display.columns:
+        df_base_display['Subelemento'] = df_base_display['Subelemento'].astype(str).str.strip().str.zfill(2)
+
+    st.caption(f"📋 {len(df_base_display)} pedido(s) correspondente(s) aos filtros. Marque os que deseja empenhar:")
 
     config = {
         "Selecionar": st.column_config.CheckboxColumn("✅ Selecionar", default=False, width="small"),
@@ -537,7 +546,7 @@ else:
     # Cria um formulário para agrupar as seleções e não recarregar a cada clique
     with st.form("form_selecao_empenhos"):
         df_editado = st.data_editor(
-            df_base[colunas_editor],
+            df_base_display[colunas_editor],
             column_config=config,
             hide_index=True,
             use_container_width=True,
@@ -545,9 +554,20 @@ else:
         )
         submit_selecoes = st.form_submit_button("✅ Salvar Minhas Seleções Adicionadas", type="secondary")
 
-    # Usa a selecao do editor sem conflitar com o key; pega as linhas completas de df_base
-    mask_sel = df_editado["Selecionar"].values
-    df_selecionados = df_base[mask_sel].copy()
+    # Atualizar o df_base com as seleções feitas no df_editado (filtrado)
+    if submit_selecoes:
+        # Pega a OC dos itens selecionados na view atual
+        ocs_selecionadas = df_editado[df_editado["Selecionar"] == True]["OC"].tolist()
+        
+        # Opcional: Desmarcar tudo antes (apenas se quiser que a busca resete tudo)
+        # df_base["Selecionar"] = False
+        
+        # Marca como TRUE os que foram selecionados no filtro
+        df_base.loc[df_base["OC"].isin(ocs_selecionadas), "Selecionar"] = True
+        st.session_state["df_para_empenhar"] = df_base
+
+    # Calcula totais para o botão de rodar baseado na base REAL COMPLETA, não só no filtro
+    df_selecionados = df_base[df_base["Selecionar"] == True].copy()
     n_sel = len(df_selecionados)
 
     col_c1, col_c2, col_c3 = st.columns([2, 2, 1])
