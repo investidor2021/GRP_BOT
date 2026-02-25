@@ -5,8 +5,7 @@ from campos import tratar_oc_ja_empenhada, normalizar_subelemento2, verificar_co
 
 
 def preencher_empenho_dotacao(page, row, dry_run=False):
-    #abrir_novo_empenho(page)
-    page.locator("span.dx-button-text:has-text('Novo')").locator("..").click()
+    abrir_novo_empenho(page)
     
     preencher_input(page, "Dotação", (normalizar_numero_excel(row["DOTACAO"])))
     selecionar_combo_habilitado(page, "Subelemento", normalizar_subelemento( row["SUBELEMENTO"]))

@@ -264,34 +264,53 @@ def gravar_aba_empenhar(df_selecionados):
     ws = spreadsheet.worksheet(ABA_EMPENHAR)
     ws.clear()
 
-    # Garante colunas mínimas
-    colunas_out = ["DOTACAO", "OC", "SUBELEMENTO", "Fornecedor", "Descrição",
-                   "Dotação", "Elemento", "STATUS", "MENSAGEM",
-                   "EMPENHO_EXISTENTE", "DATA_PROCESSAMENTO"]
-
-    # Renomeia colunas para o padrao que o robo espera
     df_out = df_selecionados.copy()
-    if "Subelemento" in df_out.columns and "SUBELEMENTO" not in df_out.columns:
-        df_out.rename(columns={"Subelemento": "SUBELEMENTO"}, inplace=True)
-    # Garante que DOTACAO e OC existam
+
+    # Remove a coluna de controle interno da interface
+    if "Selecionar" in df_out.columns:
+        df_out.drop(columns=["Selecionar"], inplace=True)
+
+    # Renomeia colunas para o padrão exato em maiúsculo que o robô de execução espera
+    mapeamentos = {
+        "Subelemento": "SUBELEMENTO",
+        "Fornecedor": "FORNECEDOR",
+        "Credor": "FORNECEDOR",
+        "CREDOR": "FORNECEDOR",
+        "Data": "DATA",
+        "Valor": "VALOR",
+        "Histórico": "HISTORICO",
+        "Historico": "HISTORICO",
+        "Fonte": "FONTE"
+    }
+    
+    # Aplica o mapeamento apenas se a coluna alvo não existir (evita chocar colunas duplicadas)
+    for col_origem, col_destino in mapeamentos.items():
+        if col_origem in df_out.columns and col_destino not in df_out.columns:
+            df_out.rename(columns={col_origem: col_destino}, inplace=True)
+        
+    # Garante que DOTACAO e OC existam para a logica de seleção exclusiva
     if "DOTACAO" not in df_out.columns:
         df_out["DOTACAO"] = ""
     if "OC" not in df_out.columns:
         df_out["OC"] = ""
-    # Robo le DOTACAO (col A) OU OC (col B), nunca as duas.
-    # DOTACAO e OC ja chegam corretos do editor; garante exclusividade:
+        
+    # O Robô lê DOTACAO OU OC, nunca as duas simultaneamente.
     mask_oc = df_out["OC"].astype(str).str.strip().isin(["", "nan", "0"]) == False
     mask_dot = df_out["DOTACAO"].astype(str).str.strip().isin(["", "nan", "0"]) == False
     df_out.loc[mask_oc, "DOTACAO"] = ""   # OC preenchido -> zera DOTACAO
     df_out.loc[mask_dot & ~mask_oc, "OC"] = ""  # DOTACAO preenchido -> zera OC
-    for c in ["STATUS", "MENSAGEM", "EMPENHO_EXISTENTE", "DATA_PROCESSAMENTO"]:
+    
+    # Garante colunas de devolução de status no final da planilha
+    colunas_feedback = ["STATUS", "MENSAGEM", "EMPENHO_EXISTENTE", "DATA_PROCESSAMENTO"]
+    for c in colunas_feedback:
         if c not in df_out.columns:
             df_out[c] = ""
 
-    # Só exporta colunas que existem
-    colunas_final = [c for c in colunas_out if c in df_out.columns]
-    df_out = df_out[colunas_final]
+    # Reordena para deixar as colunas de dados na frente e as de relatório no fim
+    outras_colunas = [c for c in df_out.columns if c not in colunas_feedback]
+    df_out = df_out[outras_colunas + colunas_feedback]
 
+    # Grava na planilha na aba Empenhar
     ws.update([df_out.columns.tolist()] + df_out.values.tolist(),
               value_input_option="USER_ENTERED")
     return len(df_out)
@@ -558,12 +577,11 @@ else:
     config = { "Selecionar": st.column_config.CheckboxColumn("✅ Selecionar", default=False, width="small") }
     for col in colunas_editor:
         if col != "Selecionar":
-            # Sem forçar "medium", deixa o Streamlit encaixar no texto/cabeçalho
-            width_type = "large" if col.upper() in ["DESCRIÇÃO", "HISTORICO", "FORNECEDOR", "CREDOR"] else None
-            config[col] = st.column_config.TextColumn(col, width=width_type)
+            # Deixa o Streamlit gerenciar o tamanho de TODAS as colunas livremente
+            config[col] = st.column_config.TextColumn(col)
 
     # === BOTÕES RÁPIDOS (Fora do form para forçar refresh na tela) ===
-    col_sel1, col_sel2, _ = st.columns([2, 5, 5])
+    col_sel1, col_sel2, _ = st.columns([2, 2,10])
     with col_sel1:
          if st.button("☑️ Selecionar Todas Visíveis", use_container_width=True):
              df_base.loc[df_base_display.index, "Selecionar"] = True
@@ -600,7 +618,7 @@ else:
             df_base_display[colunas_editor],
             column_config=config,
             hide_index=True,
-            use_container_width=True,
+            use_container_width=False,
             key="tabela_empenhos"
         )
         
