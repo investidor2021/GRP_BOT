@@ -122,8 +122,19 @@ def conectar_sheets():
             # Fallback geral
             info = dict(info)
         creds = ServiceAccountCredentials.from_json_keyfile_dict(info, scope)
-    client = gspread.authorize(creds)
-    return client.open_by_key(SPREADSHEET_KEY)
+    
+    import time
+    max_tentativas = 3
+    for tentativa in range(max_tentativas):
+        try:
+            client = gspread.authorize(creds)
+            return client.open_by_key(SPREADSHEET_KEY)
+        except Exception as e:
+            if tentativa == max_tentativas - 1:
+                if hasattr(st, "error"):
+                    st.error("❌ Os servidores do Google Sheets estão instáveis no momento (Erro 500 - Internal Server Error). Tente novamente em alguns minutos.")
+                raise e
+            time.sleep(2) # Espera 2 segundos antes de tentar de novo
 
 
 
