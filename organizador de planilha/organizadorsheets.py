@@ -543,49 +543,36 @@ else:
         "STATUS":     st.column_config.TextColumn("Status",     width="small"),
     }
 
-    # Volta pro formato original sem Form, pois o form trava o botão "Rodar Robô"
-    df_editado = st.data_editor(
-        df_base_display[colunas_editor],
-        column_config=config,
-        hide_index=True,
-        use_container_width=True,
-        key="tabela_empenhos"
-    )
-
-    # Identifica em TEMPO REAL as linhas marcadas no Filtro de Tela atual
-    # A forma mais segura e à prova de falhas de sincronizar é pelo Índice (Index) real da linha, não pelo texto da OC
-    df_base.loc[df_editado.index, "Selecionar"] = df_editado["Selecionar"]
-
-    # Salva na sessão
-    st.session_state["df_para_empenhar"] = df_base
-
-    # Calcula totais globais para liberar o botão
-    df_selecionados = df_base[df_base["Selecionar"] == True].copy()
-    n_sel = len(df_selecionados)
-
-    col_c1, col_c2, col_c3 = st.columns([2, 2, 1])
-
-    with col_c1:
-        sel_all = st.button("☑️ Selecionar Todos", use_container_width=True)
-        if sel_all:
-            df_base["Selecionar"] = True
-            st.session_state["df_para_empenhar"] = df_base
-            st.rerun()
-
-    with col_c2:
-        desel_all = st.button("🔲 Desmarcar Todos", use_container_width=True)
-        if desel_all:
-            df_base["Selecionar"] = False
-            st.session_state["df_para_empenhar"] = df_base
-            st.rerun()
-
-    with col_c3:
-        rodar = st.button(
-            f"🤖 Rodar Robô ({n_sel} selecionado{'s' if n_sel != 1 else ''})",
-            disabled=(n_sel == 0),
-            type="primary",
-            use_container_width=True
+    # O Formulario trava o recarregamento irritante da página a cada clique
+    with st.form("form_tabela_empenhos"):
+        df_editado = st.data_editor(
+            df_base_display[colunas_editor],
+            column_config=config,
+            hide_index=True,
+            use_container_width=True,
+            key="tabela_empenhos"
         )
+        
+        st.write("---")
+        rodar_form = st.form_submit_button("▶️ Confirmar Seleções e Rodar Robô", type="primary", use_container_width=True)
+
+    if rodar_form:
+        # Pega a identidade real das linhas que foram "ticadas" no momento do envio do formulário
+        df_base.loc[df_editado.index, "Selecionar"] = df_editado["Selecionar"]
+        st.session_state["df_para_empenhar"] = df_base
+        
+        df_selecionados = df_base[df_base["Selecionar"] == True].copy()
+        n_sel = len(df_selecionados)
+        
+        if n_sel == 0:
+            st.warning("⚠️ Selecione ao menos um pedido dando um 'Tique' na caixinha antes de rodar.")
+            st.stop()
+        else:
+            rodar = True # Força a variavel rodar para iniciar o bloco de execução abaixo
+    else:
+        rodar = False
+
+    # (Removido o antigo botão 'Rodar Robô' pois ele agora vive dentro do Form acima)
 
     if rodar:
         if n_sel == 0:
