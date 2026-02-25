@@ -552,16 +552,9 @@ else:
         key="tabela_empenhos"
     )
 
-    # Identifica em TEMPO REAL as OCs que estão marcadas no Filtro de Tela atual
-    ocs_marcadas_tela = df_editado[df_editado["Selecionar"] == True]["OC"].tolist()
-    
-    # Atualiza a base global SOMENTE com os cliques da tela atual (garante que itens fora do filtro não se percam)
-    # Primeiro desmarca na base os que não estão mais selecionados na tela atual
-    ocs_na_tela_atual = df_editado["OC"].tolist()
-    df_base.loc[df_base["OC"].isin(ocs_na_tela_atual), "Selecionar"] = False
-    
-    # E então marca como TRUE os que estão selecionados na tela atual
-    df_base.loc[df_base["OC"].isin(ocs_marcadas_tela), "Selecionar"] = True
+    # Identifica em TEMPO REAL as linhas marcadas no Filtro de Tela atual
+    # A forma mais segura e à prova de falhas de sincronizar é pelo Índice (Index) real da linha, não pelo texto da OC
+    df_base.loc[df_editado.index, "Selecionar"] = df_editado["Selecionar"]
 
     # Salva na sessão
     st.session_state["df_para_empenhar"] = df_base
