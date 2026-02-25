@@ -162,6 +162,14 @@ def carregar_pendentes_comlic():
     if "STATUS" in df.columns:
         mask = df["STATUS"].astype(str).str.strip().isin(["", "PENDENTE"])
         df = df[mask].copy()
+        
+    # NOVA REGRA: Filtrar também se a coluna 'EMPENHO_EXISTENTE' (coluna K) já estiver preenchida.
+    # Se tiver um número lá, significa que já é um empenho no GRP e não deve aparecer na lista de pendentes.
+    if "EMPENHO_EXISTENTE" in df.columns:
+        # Preenche os nulos com string vazia e mantém apenas os que realmente estão vazios
+        mask_vazio = df["EMPENHO_EXISTENTE"].astype(str).str.strip().replace("nan", "") == ""
+        df = df[mask_vazio].copy()
+        
     return df.reset_index(drop=True)
 
 
