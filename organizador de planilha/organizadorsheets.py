@@ -258,6 +258,111 @@ def gravar_comlic(df_novos):
     return "gravado"
 
 
+def atualizar_subelementos_vazios(df_dotacao, df_keywords):
+    """Lê a aba COM/LIC, procura quem não tem subelemento, tenta preencher e atualiza na planilha em Lote."""
+    spreadsheet = conectar_sheets()
+    ws = spreadsheet.worksheet(ABA_COMLIC)
+    
+    expected_headers = [
+        "Pedido", "Fornecedor", "Descrição", "Dotação",
+        "Elemento", "Subelemento", "Descrição Subelemento",
+        "Confiabilidade", "STATUS", "MENSAGEM",
+        "EMPENHO_EXISTENTE", "DATA_PROCESSAMENTO"
+    ]
+    
+    # Busca 1 a 1 para preservar a linha original do Sheets
+    todas_linhas = ws.get_all_values()
+    if not todas_linhas or len(todas_linhas) < 2:
+        return 0, 0
+        
+    cabecalho = todas_linhas[0]
+    # Mapear índices das colunas para achar rápido
+    mapa_colunas = {nome.strip(): idx for idx, nome in enumerate(cabecalho)}
+    
+    col_sub_idx = mapa_colunas.get("Subelemento")
+    col_desc_idx = mapa_colunas.get("Descrição", -1)
+    col_elem_idx = mapa_colunas.get("Elemento", -1)
+    col_dot_idx = mapa_colunas.get("Dotação", -1)
+    col_nomesub_idx = mapa_colunas.get("Descrição Subelemento")
+    col_conf_idx = mapa_colunas.get("Confiabilidade")
+    col_status_idx = mapa_colunas.get("STATUS", -1)
+
+    if col_sub_idx is None or col_desc_idx == -1:
+        return 0, 0
+        
+    atualizacoes = []
+    total_celulas_verificadas = 0
+    
+    # range 1-based no spreadsheet, pula o cabeçalho (i=0 -> row=1, i=1 -> row=2)
+    for i in range(1, len(todas_linhas)):
+        linha = todas_linhas[i]
+        
+        # Ignora empenhos já concluídos
+        if col_status_idx != -1 and i < len(linha) and "SUCESSO" in str(linha[col_status_idx]).upper():
+            continue
+
+        str_subelemento = str(linha[col_sub_idx]).strip() if col_sub_idx < len(linha) else ""
+        
+        # Só recalcula se Subelemento estiver em branco
+        if str_subelemento in ["", "nan", "None"]:
+            total_celulas_verificadas += 1
+            
+            descricao = str(linha[col_desc_idx]).strip() if col_desc_idx < len(linha) else ""
+            elemento = str(linha[col_elem_idx]).strip() if col_elem_idx < len(linha) else ""
+            
+            # Se a coluna Elemento também estiver vazia, tenta descobrir da "Dotação" da linha
+            if not elemento and col_dot_idx != -1 and col_dot_idx < len(linha):
+                # Na planilha do usuario, "Dotação" pode não ser a dot_completa. Se ele salvou dot.completa num bloco, extraímos.
+                elemento = extrair_elemento(str(linha[col_dot_idx]))
+                
+            if not descricao: continue
+            
+            codigo_sub, nome_sub, score = "", "", 0
+            
+            # Repete lógica do extrator
+            if elemento in SUBELEMENTOS_FIXOS:
+                codigo_sub, nome_sub = SUBELEMENTOS_FIXOS[elemento]
+                score = 1.0
+            else:
+                codigo_sub, nome_sub, score = classificar_por_palavra_chave(descricao, df_keywords, elemento)
+
+            if score == 0:
+                codigo_sub, nome_sub, score = escolher_subelemento_planilha(descricao, df_dotacao, elemento)
+                
+            # Se achou um subelemento com o previsor
+            if codigo_sub:
+                # Row na API A1 é 1-indexed. O cabeçalho é row 1.
+                row_no_sheets = i + 1 
+                
+                # Monta a att (Coluna (letra) e Row) => Exemplo: col 6 => 'F' + str(row_no_sheets)
+                # Como get_all_values retorna index 0-based, podemos usar isso para converter em letras.
+                def col_index_to_letter(col_idx):
+                    letter = ''
+                    temp = col_idx
+                    while temp >= 0:
+                        letter = chr(temp % 26 + 65) + letter
+                        temp = temp // 26 - 1
+                    return letter
+
+                celula_sub = f"{col_index_to_letter(col_sub_idx)}{row_no_sheets}"
+                atualizacoes.append({"range": celula_sub, "values": [[str(codigo_sub)]]})
+                
+                if col_nomesub_idx is not None:
+                    celula_nome = f"{col_index_to_letter(col_nomesub_idx)}{row_no_sheets}"
+                    atualizacoes.append({"range": celula_nome, "values": [[str(nome_sub)]]})
+                
+                if col_conf_idx is not None:
+                    celula_conf = f"{col_index_to_letter(col_conf_idx)}{row_no_sheets}"
+                    atualizacoes.append({"range": celula_conf, "values": [[str(round(score, 2))]]})
+
+    qtd_corrigidos = 0
+    if atualizacoes:
+        ws.batch_update(atualizacoes, value_input_option="USER_ENTERED")
+        qtd_corrigidos = len(atualizacoes) // 3 # Divide por 3 colunas que alteramos por linha (Sub, NomeSub, Conf)
+        
+    return total_celulas_verificadas, qtd_corrigidos
+
+
 def gravar_aba_empenhar(df_selecionados):
     """Substitui o conteúdo da aba 'Empenhar' pelos pedidos selecionados."""
     spreadsheet = conectar_sheets()
@@ -516,6 +621,20 @@ if st.sidebar.button("🔄 Carregar Dados da Aba", use_container_width=True, typ
     else:
         st.session_state["df_para_empenhar"] = df_pend
         st.sidebar.success(f"✅ {len(df_pend)} {descricao} carregado(s).")
+
+if fonte_sel == "COM/LIC (Pendentes)":
+    if st.sidebar.button("🪄 Tentar preencher Subelementos vazios (COM/LIC)", help="Busca subelementos faltantes da aba COM/LIC usando a classificação de palavras-chave da aba Subelemento"):
+        with st.spinner("Analisando palavras-chave para linhas com Subelemento vazio na planilha..."):
+            vazios, corrigidos = atualizar_subelementos_vazios(df_dotacao, df_keywords)
+            
+            if vazios == 0:
+                st.sidebar.info("Nenhuma linha no COM/LIC está com o campo Subelemento vazio.")
+            elif corrigidos == 0:
+                st.sidebar.warning(f"As {vazios} linhas vazias foram verificadas, mas não batem com nenhuma regra/palavra-chave.")
+            else:
+                st.sidebar.success(f"🎉 {corrigidos} de {vazios} Subelementos vazios foram atualizados direto na planilha!")
+                st.cache_data.clear() # Limpa o cache
+                st.rerun() # Atualiza a tela pra exibir tudo
 
 
 # ============================================================
