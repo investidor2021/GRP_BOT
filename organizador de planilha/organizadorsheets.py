@@ -567,98 +567,128 @@ else:
     # Pega TODAS as colunas que vieram da aba carregada, mantendo "Selecionar" em primeiro
     colunas_editor = ["Selecionar"] + [c for c in df_base.columns if c != "Selecionar"]
 
-    # --- FILTROS ---
-    st.markdown("**🔍 Filtros da Tabela:**")
-    col_f1, col_f2 = st.columns(2)
-    with col_f1:
-        filtro_pedido = st.text_input("Por Número do Pedido / OC:", "")
-    with col_f2:
-        filtro_fornecedor = st.text_input("Por Nome do Fornecedor / Credor:", "")
-
-    mask_filtro = pd.Series(True, index=df_base.index)
+    # -------------------------------------------------------------
+    # SINCRONIZAÇÃO PREVENTIVA DE ESTADO (Para não perder os tiques)
+    # -------------------------------------------------------------
+    # Se a tabela foi mexida antes de um reload para busca, extrai os tiques da memoria bruta do Streamlit
+    import hashlib
+    last_key = st.session_state.get("last_widget_key", None)
+    df_last_display = st.session_state.get("last_df_display", None)
     
-    if filtro_pedido.strip():
-        mask_filtro &= df_base["OC"].astype(str).str.contains(filtro_pedido.strip(), case=False, na=False)
-        
-    if filtro_fornecedor.strip():
-        # Busca a coluna correta que representa o Fornecedor na aba atual
-        col_forn = next((c for c in df_base.columns if c.upper() in ["FORNECEDOR", "CREDOR"]), None)
-        if col_forn:
-            mask_filtro &= df_base[col_forn].astype(str).str.contains(filtro_fornecedor.strip(), case=False, na=False)
-            
-    df_base_display = df_base[mask_filtro].copy()
+    if last_key and df_last_display is not None:
+        tabela_state = st.session_state.get(last_key, {})
+        if "edited_rows" in tabela_state and tabela_state["edited_rows"]:
+            for row_pos_str, edits in tabela_state["edited_rows"].items():
+                if "Selecionar" in edits:
+                    try:
+                        # row_pos_str vira a posição int
+                        real_idx = df_last_display.index[int(row_pos_str)]
+                        df_base.loc[real_idx, "Selecionar"] = edits["Selecionar"]
+                    except Exception:
+                        pass
+            # Salva no banco de dados
+            st.session_state["df_para_empenhar"] = df_base
 
-    # Garante que colunas de texto nao sejam inteiros ou floats (incompativel com TextColumn)
-    for col in df_base_display.select_dtypes(include=['integer', 'float']).columns:
-        if col != 'Selecionar':
-            df_base_display[col] = df_base_display[col].astype(str).replace("nan", "")
-    # Subelemento deve sempre ter 2 digitos (ex: 7 -> 07)
-    if 'Subelemento' in df_base_display.columns:
-        df_base_display['Subelemento'] = df_base_display['Subelemento'].astype(str).str.strip().str.zfill(2)
-    elif 'SUBELEMENTO' in df_base_display.columns:
-        df_base_display['SUBELEMENTO'] = df_base_display['SUBELEMENTO'].astype(str).str.strip().str.zfill(2)
-
-    st.caption(f"📋 {len(df_base_display)} pedido(s) correspondente(s) aos filtros. Marque os que deseja empenhar:")
-
-    # Cria configuração Dinâmica para abraçar TODAS as colunas da aba selecionada
-    config = { "Selecionar": st.column_config.CheckboxColumn("✅ Selecionar", default=False, width="small") }
-    for col in colunas_editor:
-        if col != "Selecionar":
-            # Deixa o Streamlit gerenciar o tamanho de TODAS as colunas livremente
-            config[col] = st.column_config.TextColumn(col)
-
-    # === BOTÕES RÁPIDOS (Fora do form para forçar refresh na tela) ===
-    col_sel1, col_sel2, _ = st.columns([2, 2,10])
-    with col_sel1:
-         if st.button("☑️ Selecionar Todas Visíveis", use_container_width=True):
-             df_base.loc[df_base_display.index, "Selecionar"] = True
-             st.session_state["df_para_empenhar"] = df_base
-             st.rerun()
-    with col_sel2:
-         if st.button("🔲 Desmarcar Todas Visíveis", use_container_width=True):
-             df_base.loc[df_base_display.index, "Selecionar"] = False
-             st.session_state["df_para_empenhar"] = df_base
-             st.rerun()
-
-    # === EDIÇÃO EM LOTE PARA PADRÕES ===
-    fonte_atual = st.session_state.get("fonte_dados", "")
-    if fonte_atual and "Padrao" in fonte_atual:
-        st.markdown("**✏️ Edição em Lote (Aplicar nas linhas com 'Tique' ativas abaixo):**")
-        col_lote1, col_lote2, col_lote3, col_lote4 = st.columns([2, 2, 4, 3])
-        with col_lote1:
-            lote_data = st.text_input("Data:", key="lote_data", placeholder="Ex: 01/01/2026")
-        with col_lote2:
-            lote_valor = st.text_input("Valor:", key="lote_valor", placeholder="Ex: 2500,00")
-        with col_lote3:
-            lote_hist = st.text_input("Histórico:", key="lote_hist")
-        with col_lote4:
-            st.write("") # Espaçamento
+    # ================== FORMULÁRIO GIGANTE DA TABELA ==================
+    # Envolver tudo num Formulario impede a tela de piscar a cada unico clique!
+    with st.form("form_tabela_empenhos"):
+        # --- FILTROS ---
+        st.markdown("**🔍 Filtros da Tabela:**")
+        col_f1, col_f2, col_f3 = st.columns([3, 3, 2])
+        with col_f1:
+            filtro_pedido = st.text_input("Por Número do Pedido / OC:", "")
+        with col_f2:
+            filtro_fornecedor = st.text_input("Por Nome do Fornecedor / Credor:", "")
+        with col_f3:
             st.write("")
-            aplicar_lote = st.button("🔽 Aplicar aos Selecionados", use_container_width=True)
-    else:
-        aplicar_lote = False
+            st.write("")
+            btn_filtrar = st.form_submit_button("🔍 Buscar/Aplicar", use_container_width=True)
 
-    # Renderiza o Data Editor com recarregamento automatico a cada clique nos tiques
-    df_editado = st.data_editor(
-        df_base_display[colunas_editor],
-        column_config=config,
-        hide_index=True,
-        use_container_width=False,
-        key="tabela_empenhos"
-    )
-    
-    # SALVA IMEDIATAMENTE os tiques na base de dados (df_base) toda vez que a tabela eh mexida
-    # Isso impede que os tiques sejam perdidos ao usar os filtros de busca
+        # 1. Aplicar os filtros na base de dados
+        mask_filtro = pd.Series(True, index=df_base.index)
+        if filtro_pedido.strip():
+            mask_filtro &= df_base["OC"].astype(str).str.contains(filtro_pedido.strip(), case=False, na=False)
+        if filtro_fornecedor.strip():
+            col_forn = next((c for c in df_base.columns if c.upper() in ["FORNECEDOR", "CREDOR"]), None)
+            if col_forn:
+                mask_filtro &= df_base[col_forn].astype(str).str.contains(filtro_fornecedor.strip(), case=False, na=False)
+                
+        df_base_display = df_base[mask_filtro].copy()
+
+        # 2. Garantias do Tipo TextColumn
+        for col in df_base_display.select_dtypes(include=['integer', 'float']).columns:
+            if col != 'Selecionar':
+                df_base_display[col] = df_base_display[col].astype(str).replace("nan", "")
+        if 'Subelemento' in df_base_display.columns:
+            df_base_display['Subelemento'] = df_base_display['Subelemento'].astype(str).str.strip().str.zfill(2)
+        elif 'SUBELEMENTO' in df_base_display.columns:
+            df_base_display['SUBELEMENTO'] = df_base_display['SUBELEMENTO'].astype(str).str.strip().str.zfill(2)
+
+        st.caption(f"📋 {len(df_base_display)} pedido(s) correspondente(s) aos filtros. Marque os que deseja empenhar:")
+
+        # 3. Botões Rápidos Visuais DENTRO do Form (O botão Marcar não faz reload desnecessario de fora pra dentro)
+        col_sel1, col_sel2, _ = st.columns([3, 3, 6])
+        with col_sel1:
+             marcar_tudo = st.form_submit_button("☑️ Marcar Todas Visíveis", use_container_width=True)
+        with col_sel2:
+             desmarcar_tudo = st.form_submit_button("🔲 Desmarcar Todas Visíveis", use_container_width=True)
+
+        if marcar_tudo:
+             df_base.loc[df_base_display.index, "Selecionar"] = True
+             df_base_display["Selecionar"] = True
+             st.session_state["df_para_empenhar"] = df_base
+        if desmarcar_tudo:
+             df_base.loc[df_base_display.index, "Selecionar"] = False
+             df_base_display["Selecionar"] = False
+             st.session_state["df_para_empenhar"] = df_base
+
+        # 4. Config da Tabela Visual
+        config = { "Selecionar": st.column_config.CheckboxColumn("✅ Selecionar", default=False, width="small") }
+        for col in colunas_editor:
+            if col != "Selecionar":
+                config[col] = st.column_config.TextColumn(col)
+
+        # 5. Lote de Substituição 
+        fonte_atual = st.session_state.get("fonte_dados", "")
+        if fonte_atual and "Padrao" in fonte_atual:
+            st.markdown("**✏️ Edição em Lote (Aplicar nas linhas com 'Tique' ativas abaixo):**")
+            col_lote1, col_lote2, col_lote3, col_lote4 = st.columns([2, 2, 4, 3])
+            with col_lote1:
+                lote_data = st.text_input("Data:", key="lote_data", placeholder="Ex: 01/01/2026")
+            with col_lote2:
+                lote_valor = st.text_input("Valor:", key="lote_valor", placeholder="Ex: 2500,00")
+            with col_lote3:
+                lote_hist = st.text_input("Histórico:", key="lote_hist")
+            with col_lote4:
+                st.write("") 
+                st.write("")
+                aplicar_lote = st.form_submit_button("🔽 Aplicar aos Selecionados", use_container_width=True)
+        else:
+            aplicar_lote = False
+
+        # 6. Renderizando o Data Editor com Chave Única Inteligente (impede fantasmas de views antigos)
+        hash_str = f"{filtro_pedido}_{filtro_fornecedor}_{marcar_tudo}_{desmarcar_tudo}"
+        widget_key = "tabela_" + hashlib.md5(hash_str.encode()).hexdigest()
+        
+        st.session_state["last_widget_key"] = widget_key
+        st.session_state["last_df_display"] = df_base_display
+
+        df_editado = st.data_editor(
+            df_base_display[colunas_editor],
+            column_config=config,
+            hide_index=True,
+            use_container_width=False,
+            key=widget_key
+        )
+        
+        st.write("---")
+        rodar = st.form_submit_button("▶️ Confirmar Seleções e Rodar Robô", type="primary", use_container_width=True)
+
+    # FINAL DO FORM  - Lógica do LOTE e RERUN EXTERNIZADO
+    # Grava novamente as mudanças finais pro df_base
     if "Selecionar" in df_editado.columns:
         df_base.loc[df_editado.index, "Selecionar"] = df_editado["Selecionar"]
         st.session_state["df_para_empenhar"] = df_base
-    
-    st.write("---")
-    rodar = st.button("▶️ Confirmar Seleções e Rodar Robô", type="primary", use_container_width=True)
-
-    # LÓGICA DE PROCESSAMENTO DO LOTE
-    df_selecionados = df_base[df_base["Selecionar"] == True].copy()
-    n_sel = len(df_selecionados)
 
     if aplicar_lote:
         linhas_sel = df_editado.index[df_editado["Selecionar"] == True]
@@ -668,10 +698,12 @@ else:
             if lote_data.strip():  df_base.loc[linhas_sel, "DATA"] = lote_data.strip()
             if lote_valor.strip(): df_base.loc[linhas_sel, "VALOR"] = lote_valor.strip()
             if lote_hist.strip():  df_base.loc[linhas_sel, "HISTORICO"] = lote_hist.strip()
-            
             st.session_state["df_para_empenhar"] = df_base
             st.success(f"✅ Valores em lote preenchidos em {len(linhas_sel)} linha(s)!")
             st.rerun()
+
+    df_selecionados = df_base[df_base["Selecionar"] == True].copy()
+    n_sel = len(df_selecionados)
 
     if rodar:
         # 1o Bloqueio: Validar Credenciais antes de qualquer coisa
