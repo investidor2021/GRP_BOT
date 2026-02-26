@@ -30,15 +30,15 @@ def selecionar_combo_habilitado(page, rotulo, valor):
 
     import re
     texto_busca = str(valor).strip()
-    if texto_busca.isdigit():
-        # Usa RegEx para garantir correspondencia exata: ex: "\b0?1\b\s*-"
-        # Isso impede que a string "1" puxe resultados como "11" ou "21"
-        padrao = re.compile(fr'\b0?{int(texto_busca)}\b\s*-')
+    
+    # Aplica regex estrita APENAS para Subelemento (onde '1' conflita com '11', '21')
+    if rotulo.strip().lower() == "subelemento" and texto_busca.isdigit():
+        padrao = re.compile(fr'\b0?{int(texto_busca)}\b')
     else:
         padrao = texto_busca
 
     opcao = page.get_by_role("option").filter(has_text=padrao)
-    opcao.wait_for(state="visible")
+    opcao.first.wait_for(state="visible")
     opcao.first.click()
 
 
@@ -55,13 +55,14 @@ def preencher_combo(page, rotulo, valor):
 
     import re
     texto_busca = str(valor).strip()
-    if texto_busca.isdigit():
-        padrao = re.compile(fr'\b0?{int(texto_busca)}\b\s*-')
+    
+    if rotulo.strip().lower() == "subelemento" and texto_busca.isdigit():
+        padrao = re.compile(fr'\b0?{int(texto_busca)}\b')
     else:
         padrao = texto_busca
 
     opcao = page.get_by_role("option").filter(has_text=padrao)
-    opcao.wait_for(state="visible")
+    opcao.first.wait_for(state="visible")
     opcao.first.click()
 
 
