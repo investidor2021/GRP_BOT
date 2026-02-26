@@ -100,63 +100,88 @@ def ler_empenhar_como_df(spreadsheet):
     return df, ws
 
 
-def atualizar_status_comlic(spreadsheet, pedido, oc, status, mensagem, empenho_existente):
+def atualizar_status_origem(spreadsheet, row_df, status, mensagem, empenho_existente):
     """
     Atualiza STATUS, MENSAGEM, EMPENHO_EXISTENTE e DATA_PROCESSAMENTO
-    na aba COM/LIC para a linha correspondente ao Pedido ou OC.
+    na aba de origem exata (COM/LIC ou Padrões) para a linha correspondente.
     """
-    ws = spreadsheet.worksheet(ABA_COMLIC)
+    fonte = str(row_df.get("FONTE_ORIGEM", ABA_COMLIC)).strip()
+    if not fonte or fonte.lower() == "nan":
+        fonte = ABA_COMLIC
+
+    try:
+        ws = spreadsheet.worksheet(fonte)
+    except Exception as e:
+        log.error(f"❌ Aba origem '{fonte}' não encontrada no Sheets: {e}")
+        return
+
     headers = ws.row_values(1)
+    
+    def get_col(name1, name2=None):
+        for i, h in enumerate(headers):
+            h_upper = str(h).strip().upper()
+            if h_upper == name1.upper() or (name2 and h_upper == name2.upper()):
+                return i + 1
+        return None
 
-    try:
-        col_pedido = headers.index("Pedido") + 1
-    except ValueError:
-        col_pedido = None
+    col_status = get_col("STATUS")
+    col_msg    = get_col("MENSAGEM")
+    col_emp    = get_col("EMPENHO_EXISTENTE")
+    col_data   = get_col("DATA_PROCESSAMENTO")
 
-    try:
-        col_oc = headers.index("OC") + 1
-    except ValueError:
-        col_oc = None
-
-    col_status      = headers.index("STATUS")      + 1 if "STATUS"            in headers else None
-    col_mensagem    = headers.index("MENSAGEM")     + 1 if "MENSAGEM"          in headers else None
-    col_empenho     = headers.index("EMPENHO_EXISTENTE") + 1 if "EMPENHO_EXISTENTE" in headers else None
-    col_data        = headers.index("DATA_PROCESSAMENTO")+ 1 if "DATA_PROCESSAMENTO" in headers else None
+    # Colunas de busca dependendo da aba
+    col_pedido = get_col("Pedido")
+    col_oc     = get_col("OC")
+    col_dot    = get_col("DOTACAO", "Dotação")
+    col_forn   = get_col("FORNECEDOR", "Credor")
 
     all_values = ws.get_all_values()
     agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    log.debug(f"Buscando no COM/LIC: Pedido='{pedido}' | OC='{oc}'")
+    pedido_alvo = str(row_df.get("Pedido", "")).strip()
+    oc_alvo     = str(row_df.get("OC", "")).strip()
+    dot_alvo    = str(row_df.get("DOTACAO", "")).strip()
+    forn_alvo   = str(row_df.get("FORNECEDOR", "")).strip()
+
+    log.debug(f"Buscando na aba '{fonte}': Pedido='{pedido_alvo}' | OC='{oc_alvo}' | Dot='{dot_alvo}' | Forn='{forn_alvo}'")
 
     for i, row_vals in enumerate(all_values[1:], start=2):
-        linha_pedido = str(row_vals[col_pedido - 1]).strip() if col_pedido else ""
-        linha_oc     = str(row_vals[col_oc - 1]).strip()     if col_oc     else ""
+        bate = False
+        
+        def safe_val(idx_1based):
+            if not idx_1based or len(row_vals) < idx_1based: return ""
+            return str(row_vals[idx_1based - 1]).strip()
 
-        # Encontra pela OC ou pelo Pedido
-        # Importante: quando o empenho é por OC, o valor da OC IS o Pedido no COM/LIC
-        bate = (
-            (str(oc).strip()     and linha_oc     == str(oc).strip())     or  # OC col COM/LIC
-            (str(pedido).strip() and linha_pedido == str(pedido).strip()) or  # Pedido col COM/LIC
-            (str(oc).strip()     and linha_pedido == str(oc).strip())         # OC == Pedido COM/LIC
-        )
+        if fonte == ABA_COMLIC or oc_alvo:
+            # Lógica antiga para COM/LIC ou itens com OC
+            linha_ped = safe_val(col_pedido)
+            linha_oc  = safe_val(col_oc)
+            if (oc_alvo and linha_oc == oc_alvo) or \
+               (pedido_alvo and linha_ped == pedido_alvo) or \
+               (oc_alvo and linha_ped == oc_alvo):
+                bate = True
+        else:
+            # Lógica nova para abas Padrão (usa Dotação + Fornecedor como chave de busca)
+            linha_dot = safe_val(col_dot)
+            linha_forn = safe_val(col_forn)
+            
+            if dot_alvo and linha_dot == dot_alvo and linha_forn == forn_alvo:
+                bate = True
+
         if bate:
-
             updates = []
-            if col_status:
-                updates.append({"range": gspread.utils.rowcol_to_a1(i, col_status),   "values": [[status]]})
-            if col_mensagem:
-                updates.append({"range": gspread.utils.rowcol_to_a1(i, col_mensagem), "values": [[mensagem]]})
-            if col_empenho:
-                updates.append({"range": gspread.utils.rowcol_to_a1(i, col_empenho), "values": [[empenho_existente or ""]]})
-            if col_data:
-                updates.append({"range": gspread.utils.rowcol_to_a1(i, col_data),    "values": [[agora]]})
+            if col_status: updates.append({"range": gspread.utils.rowcol_to_a1(i, col_status), "values": [[status]]})
+            if col_msg:    updates.append({"range": gspread.utils.rowcol_to_a1(i, col_msg),    "values": [[mensagem]]})
+            if col_emp:    updates.append({"range": gspread.utils.rowcol_to_a1(i, col_emp),    "values": [[empenho_existente or ""]]})
+            if col_data:   updates.append({"range": gspread.utils.rowcol_to_a1(i, col_data),   "values": [[agora]]})
 
             if updates:
                 ws.batch_update(updates)
-                log.info(f"✅ COM/LIC atualizado: Pedido={pedido} OC={oc} → {status}")
+                log.info(f"✅ Aba '{fonte}' atualizada na linha {i} → {status}")
             return
 
-    log.warning(f"⚠️ Não encontrou Pedido={pedido}/OC={oc} no COM/LIC para atualizar status")
+    log.warning(f"⚠️ Não encontrou a linha original na aba '{fonte}' para atualizar o status.")
+
 
 
 # ============================
@@ -217,7 +242,7 @@ def executar_empenhos(page, spreadsheet):
 
                 registrar_resultado(df, idx, status, msg)
                 df.loc[idx, "EMPENHO_EXISTENTE"] = info or ""
-                atualizar_status_comlic(spreadsheet, pedido, oc, status, msg, info)
+                atualizar_status_origem(spreadsheet, row, status, msg, info)
 
             # DOTAÇÃO
             elif tem_dotacao and not tem_oc:
@@ -227,26 +252,26 @@ def executar_empenhos(page, spreadsheet):
                 registrar_resultado(df, idx, status, msg)
                 if info:
                     df.loc[idx, "EMPENHO_EXISTENTE"] = info
-                atualizar_status_comlic(spreadsheet, pedido, oc, status, msg, info)
+                atualizar_status_origem(spreadsheet, row, status, msg, info)
 
             elif tem_oc and tem_dotacao:
                 msg = "Linha possui OC e DOTACAO preenchidos ao mesmo tempo"
                 log.warning(f"⚠️ {msg} — Linha {idx + 1}")
                 registrar_resultado(df, idx, "ERRO", msg)
-                atualizar_status_comlic(spreadsheet, pedido, oc, "ERRO", msg, None)
+                atualizar_status_origem(spreadsheet, row, "ERRO", msg, None)
 
             else:
                 msg = "Linha não possui nem OC nem DOTACAO"
                 log.warning(f"⚠️ {msg} — Linha {idx + 1}")
                 registrar_resultado(df, idx, "ERRO", msg)
-                atualizar_status_comlic(spreadsheet, pedido, oc, "ERRO", msg, None)
+                atualizar_status_origem(spreadsheet, row, "ERRO", msg, None)
 
         except Exception as e:
             tb = traceback.format_exc()
             log.error(f"❌ Erro na linha {idx + 1}: {e}\n{tb}")
             msg = str(e)
             registrar_resultado(df, idx, "ERRO_AUTOMACAO", msg)
-            atualizar_status_comlic(spreadsheet, pedido, oc, "ERRO_AUTOMACAO", msg, None)
+            atualizar_status_origem(spreadsheet, row, "ERRO_AUTOMACAO", msg, None)
             continue
 
     log.info("✅ Todos os empenhos processados")

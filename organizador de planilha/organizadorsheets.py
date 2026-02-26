@@ -477,9 +477,9 @@ if uploaded_file:
 st.divider()
 
 # ============================================================
-# SEÇÃO B — Carregar Dados para Empenhar
+# MENU LATERAL — Carregar Dados para Empenhar
 # ============================================================
-st.markdown('<div class="section-header">🔄 Seção 2 — Carregar Dados para Empenhar</div>', unsafe_allow_html=True)
+st.sidebar.markdown('### 🔄 Fontes de Dados (Planilha)')
 
 FONTES = {
     "COM/LIC (Pendentes)": "__comlic__",
@@ -489,34 +489,50 @@ FONTES = {
     "Padrao Militar":      "Padrao Militar",
 }
 
-col_b1, col_b2 = st.columns([3, 1])
-with col_b1:
-    fonte_sel = st.selectbox(
-        "Fonte de dados:",
-        options=list(FONTES.keys()),
-        key="fonte_dados"
-    )
-with col_b2:
-    if st.button("🔄 Carregar", use_container_width=True):
-        aba_key = FONTES[fonte_sel]
-        if aba_key == "__comlic__":
-            with st.spinner("Buscando pendentes no COM/LIC..."):
-                df_pend = carregar_pendentes_comlic()
-            descricao = "pendente(s) no COM/LIC"
-        else:
-            with st.spinner(f"Carregando {fonte_sel}..."):
-                try:
-                    df_pend = carregar_aba_padrao(aba_key)
-                    descricao = f"registro(s) de '{fonte_sel}'"
-                except Exception as e:
-                    st.error(f"❌ Erro ao carregar aba '{aba_key}': {e}")
-                    df_pend = pd.DataFrame()
-                    descricao = ""
-        if df_pend.empty:
-            st.info(f"ℹ️ Nenhum registro encontrado em '{fonte_sel}'.")
-        else:
-            st.session_state["df_para_empenhar"] = df_pend
-            st.success(f"✅ {len(df_pend)} {descricao} carregado(s).")
+fonte_sel = st.sidebar.selectbox(
+    "Escolha qual aba carregar:",
+    options=list(FONTES.keys()),
+    key="fonte_dados"
+)
+
+if st.sidebar.button("🔄 Carregar Dados da Aba", use_container_width=True, type="primary"):
+    aba_key = FONTES[fonte_sel]
+    if aba_key == "__comlic__":
+        with st.spinner("Buscando pendentes no COM/LIC..."):
+            df_pend = carregar_pendentes_comlic()
+        descricao = "pendente(s) no COM/LIC"
+    else:
+        with st.spinner(f"Carregando {fonte_sel}..."):
+            try:
+                df_pend = carregar_aba_padrao(aba_key)
+                descricao = f"registro(s) de '{fonte_sel}'"
+            except Exception as e:
+                st.sidebar.error(f"❌ Erro ao carregar aba '{aba_key}': {e}")
+                df_pend = pd.DataFrame()
+                descricao = ""
+                
+    if df_pend.empty:
+        st.sidebar.info(f"ℹ️ Nenhum registro encontrado em '{fonte_sel}'.")
+    else:
+        st.session_state["df_para_empenhar"] = df_pend
+        st.sidebar.success(f"✅ {len(df_pend)} {descricao} carregado(s).")
+
+
+# ============================================================
+# MENU LATERAL — Credenciais GRP
+# ============================================================
+st.sidebar.divider()
+st.sidebar.markdown('### 🔑 Acesso ao GRP')
+st.sidebar.caption("Digite suas credenciais do GRP para o robô usar:")
+
+usu_digitado = st.sidebar.text_input("Usuário GRP:", value=st.session_state.get("usu_grp", ""))
+senha_digitada = st.sidebar.text_input("Senha GRP:", type="password", value=st.session_state.get("senha_grp", ""))
+
+st.session_state["usu_grp"] = usu_digitado.strip()
+st.session_state["senha_grp"] = senha_digitada.strip()
+
+st.sidebar.divider()
+st.sidebar.caption("🤖 Desenvolvido para GRP PMDVGDS")
 
 st.divider()
 
@@ -572,8 +588,8 @@ else:
             
     df_base_display = df_base[mask_filtro].copy()
 
-    # Garante que colunas de texto nao sejam inteiros (incompativel com TextColumn)
-    for col in df_base_display.select_dtypes(include='integer').columns:
+    # Garante que colunas de texto nao sejam inteiros ou floats (incompativel com TextColumn)
+    for col in df_base_display.select_dtypes(include=['integer', 'float']).columns:
         if col != 'Selecionar':
             df_base_display[col] = df_base_display[col].astype(str).replace("nan", "")
     # Subelemento deve sempre ter 2 digitos (ex: 7 -> 07)
@@ -672,9 +688,20 @@ else:
     # (Removido o antigo botão 'Rodar Robô' pois ele agora vive dentro do Form acima)
 
     if rodar:
+        # 1o Bloqueio: Validar Credenciais antes de qualquer coisa
+        usu_memoria = st.session_state.get("usu_grp", "").strip()
+        senha_memoria = st.session_state.get("senha_grp", "").strip()
+        
+        if not usu_memoria or not senha_memoria:
+            st.error("🛑 Erro: Por favor, digite seu Usuário e Senha do GRP no Menu Lateral esquerdo antes de rodar o robô!")
+            st.stop()
+            
         if n_sel == 0:
             st.warning("Selecione ao menos um pedido.")
         else:
+            # Carimba de qual aba esses pedidos vieram para o robô saber onde relatar o status
+            df_selecionados["FONTE_ORIGEM"] = st.session_state.get("fonte_dados", ABA_COMLIC)
+            
             with st.spinner(f"⚙️ Gravando {n_sel} pedido(s) na aba '{ABA_EMPENHAR}'..."):
                 qtd = gravar_aba_empenhar(df_selecionados)
             st.info(f"📋 {qtd} pedido(s) gravado(s) na aba '{ABA_EMPENHAR}'. Iniciando robô...")
@@ -694,15 +721,19 @@ else:
 
             with st.spinner("🤖 Robô em execução... aguarde."):
                 try:
-                    # Prepara o ambiente injetando os secrets do Streamlit
+                    # Prepara o ambiente injetando os secrets do Streamlit OU o que o usuario digitou
                     custom_env = os.environ.copy()
+                    
+                    # INJETA AS CREDENCIAIS DIGITADAS NA TELA DIRETO NA MEMÓRIA DO ROBÔ (Ignora .env)
+                    custom_env["GRP_USUARIO"] = usu_memoria
+                    custom_env["GRP_SENHA"] = senha_memoria
                     
                     # LOG PARA DEBUG: Mostrar as chaves disponíveis nos secrets pro usuário ver
                     try:
                         chaves_disponiveis = list(st.secrets.keys())
-                        st.warning(f"Chaves de secrets encontradas no Streamlit: {chaves_disponiveis}")
+                        # st.warning(f"Chaves de secrets encontradas no Streamlit: {chaves_disponiveis}")
                     except Exception as e:
-                        st.error(f"Erro ao ler chaves do secrets: {e}")
+                        pass
 
                     try:
                         if "GRP_USUARIO" in st.secrets:
@@ -814,17 +845,38 @@ with st.spinner("Buscando resultados da última execução..."):
             c3.metric("❌ Erros / Impedimentos", erros)
             c4.metric("⏳ Pendentes", pendentes)
             
-            # Filtro rápido para o painel de erros
-            filtro_relatorio = st.selectbox(
-                "Filtrar visão do relatório:",
-                ["Todos os Registros", "Mostrar Apenas Erros ❌", "Mostrar Apenas Sucessos ✅"]
-            )
+            # Filtros para o painel de erros
+            col_f1, col_f2 = st.columns(2)
+            
+            with col_f1:
+                filtro_relatorio = st.selectbox(
+                    "Filtrar por Status:",
+                    ["Todos os Registros", "Mostrar Apenas Erros ❌", "Mostrar Apenas Sucessos ✅"]
+                )
+                
+            with col_f2:
+                # Pega as fontes de origem únicas se a coluna existir, senão põe só 'Todas as Abas'
+                opcoes_fonte = ["Todas as Abas"]
+                if "FONTE_ORIGEM" in df_relatorio.columns:
+                    fontes_unicas = df_relatorio["FONTE_ORIGEM"].dropna().unique().tolist()
+                    opcoes_fonte.extend(fontes_unicas)
+                    
+                filtro_origem = st.selectbox(
+                    "Filtrar por Aba de Origem:",
+                    opcoes_fonte
+                )
             
             df_relatorio_display = df_relatorio.copy()
+            
+            # Aplica filtro de Status
             if filtro_relatorio == "Mostrar Apenas Erros ❌":
                 df_relatorio_display = df_relatorio_display[~df_relatorio_display["STATUS"].isin(["SUCESSO", ""])]
             elif filtro_relatorio == "Mostrar Apenas Sucessos ✅":
                 df_relatorio_display = df_relatorio_display[df_relatorio_display["STATUS"] == "SUCESSO"]
+                
+            # Aplica filtro de Aba de Origem
+            if filtro_origem != "Todas as Abas" and "FONTE_ORIGEM" in df_relatorio_display.columns:
+                df_relatorio_display = df_relatorio_display[df_relatorio_display["FONTE_ORIGEM"] == filtro_origem]
 
             # Exibe a tabela do relatório dando destaque pro cruzamento de informações
             st.dataframe(
