@@ -17,19 +17,37 @@ pause
 :: 1. Verificando o Python
 echo.
 echo [1/4] Verificando se o Python esta instalado...
-python --version >nul 2>&1
+python -c "print('ok')" >nul 2>&1
 if %errorlevel% neq 0 (
-    color 0C
-    echo ❌ ERRO: O Python nao foi encontrado no seu sistema!
-    echo Por favor, baixe o Python em python.org, marque a caixa "Add python.exe to PATH" durante a instalacao e tente rodar este arquivo novamente.
-    pause
-    exit /b
+    color 0E
+    echo ⚠️ Python nao encontrado nesta maquina. 
+    echo 📥 Iniciando o download automatico do Python 3.12...
+    echo Por favor, aguarde. Pode demorar de 1 a 3 minutos dependendo da internet.
+    
+    curl -L -o "%temp%\python-installer.exe" "https://www.python.org/ftp/python/3.12.5/python-3.12.5-amd64.exe"
+    
+    echo 📦 Instalando Python de forma silenciosa e configurando o sistema...
+    "%temp%\python-installer.exe" /quiet InstallAllUsers=0 PrependPath=1 Include_test=0
+    
+    :: Atualiza a memoria do prompt para enxergar o Python que acabou de ser instalado
+    set "PATH=%LOCALAPPDATA%\Programs\Python\Python312\Scripts\;%LOCALAPPDATA%\Programs\Python\Python312\;%PATH%"
+    
+    python -c "print('ok')" >nul 2>&1
+    if %errorlevel% neq 0 (
+        color 0C
+        echo ❌ O instalador automatico falhou. 
+        echo Por favor, baixe o Python manualmente em python.org e tente novamente.
+        pause
+        exit /b
+    )
+    echo ✅ Python instalado e configurado perfeitamente!
+) else (
+    echo ✅ Python ja esta instalado!
 )
-echo ✅ Python encontrado!
 
-:: 2. Instalando as bibliotecas do projeto (lendo do requirements.txt se existir)
+:: 2. Instalando as bibliotecas do projeto - lendo do requirements.txt
 echo.
-echo [2/4] Instalando dependencias (Streamlit, Playwright, Pandas, Gspread)...
+echo [2/4] Instalando dependencias essenciais do projeto...
 echo Isso pode demorar alguns minutos. Aguarde...
 pip install -U pip >nul 2>&1
 if exist "requirements.txt" (
@@ -41,7 +59,7 @@ echo ✅ Bibliotecas instaladas!
 
 :: 3. Instalando o navegador fantasma do Playwright
 echo.
-echo [3/4] Baixando o navegador invisivel do robo (Playwright Chromium)...
+echo [3/4] Baixando o navegador invisivel do robo - Playwright Chromium...
 echo Isso tambem pode demorar um pouco, dependendo da sua internet.
 playwright install chromium
 echo ✅ Navegador do robo instalado!
