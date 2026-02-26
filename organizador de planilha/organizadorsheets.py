@@ -551,15 +551,26 @@ else:
     # Pega TODAS as colunas que vieram da aba carregada, mantendo "Selecionar" em primeiro
     colunas_editor = ["Selecionar"] + [c for c in df_base.columns if c != "Selecionar"]
 
-    # --- NOVO FILTRO DE PEDIDO (OC) ---
-    filtro_pedido = st.text_input("🔍 Filtrar por Número do Pedido / OC:", "")
+    # --- FILTROS ---
+    st.markdown("**🔍 Filtros da Tabela:**")
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        filtro_pedido = st.text_input("Por Número do Pedido / OC:", "")
+    with col_f2:
+        filtro_fornecedor = st.text_input("Por Nome do Fornecedor / Credor:", "")
+
+    mask_filtro = pd.Series(True, index=df_base.index)
     
     if filtro_pedido.strip():
-        # Filtra mantendo as linhas onde a OC contenha o texto digitado
-        mask_filtro = df_base["OC"].astype(str).str.contains(filtro_pedido.strip(), case=False, na=False)
-        df_base_display = df_base[mask_filtro].copy()
-    else:
-        df_base_display = df_base.copy()
+        mask_filtro &= df_base["OC"].astype(str).str.contains(filtro_pedido.strip(), case=False, na=False)
+        
+    if filtro_fornecedor.strip():
+        # Busca a coluna correta que representa o Fornecedor na aba atual
+        col_forn = next((c for c in df_base.columns if c.upper() in ["FORNECEDOR", "CREDOR"]), None)
+        if col_forn:
+            mask_filtro &= df_base[col_forn].astype(str).str.contains(filtro_fornecedor.strip(), case=False, na=False)
+            
+    df_base_display = df_base[mask_filtro].copy()
 
     # Garante que colunas de texto nao sejam inteiros (incompativel com TextColumn)
     for col in df_base_display.select_dtypes(include='integer').columns:
@@ -765,3 +776,65 @@ else:
                     st.info(f"🔄 {len(df_updated)} pedido(s) ainda pendente(s) no COM/LIC.")
                 else:
                     st.success("🎉 Nenhum pedido pendente restante no COM/LIC!")
+
+# ============================================================
+# SEÇÃO D — Relatório e Gestão da Última Execução
+# ============================================================
+st.divider()
+st.markdown('<div class="section-header">📊 Seção 4 — Relatório da Última Execução</div>', unsafe_allow_html=True)
+st.caption("Verifique o status, os empenhos gerados e os erros da última automação registrada na aba 'Empenhar'.")
+
+if st.button("🔄 Recarregar Relatório do Servidor", use_container_width=True):
+    st.rerun()
+
+with st.spinner("Buscando resultados da última execução..."):
+    # Carrega a aba Empenhar do zero pra ver o que o robô escreveu lá
+    try:
+        spreadsheet = conectar_sheets()
+        ws_empenhar = spreadsheet.worksheet(ABA_EMPENHAR)
+        records_empenhar = ws_empenhar.get_all_records()
+        df_relatorio = pd.DataFrame(records_empenhar)
+        
+        if df_relatorio.empty:
+            st.info("A fila de execução 'Empenhar' está limpa ou vazia.")
+        else:
+            # Prepara métricas
+            if "STATUS" not in df_relatorio.columns:
+                df_relatorio["STATUS"] = ""
+                
+            total = len(df_relatorio)
+            sucessos = len(df_relatorio[df_relatorio["STATUS"] == "SUCESSO"])
+            erros    = len(df_relatorio[df_relatorio["STATUS"].str.contains("ERRO|SEM_SALDO|COMPRA_DIRETA|JA_EMPENHADA|RETORNO", na=False)])
+            pendentes = total - sucessos - erros
+
+            # Exibe os cartões
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("📦 Total Selecionado", total)
+            c2.metric("✅ Sucessos", sucessos)
+            c3.metric("❌ Erros / Impedimentos", erros)
+            c4.metric("⏳ Pendentes", pendentes)
+            
+            # Filtro rápido para o painel de erros
+            filtro_relatorio = st.selectbox(
+                "Filtrar visão do relatório:",
+                ["Todos os Registros", "Mostrar Apenas Erros ❌", "Mostrar Apenas Sucessos ✅"]
+            )
+            
+            df_relatorio_display = df_relatorio.copy()
+            if filtro_relatorio == "Mostrar Apenas Erros ❌":
+                df_relatorio_display = df_relatorio_display[~df_relatorio_display["STATUS"].isin(["SUCESSO", ""])]
+            elif filtro_relatorio == "Mostrar Apenas Sucessos ✅":
+                df_relatorio_display = df_relatorio_display[df_relatorio_display["STATUS"] == "SUCESSO"]
+
+            # Exibe a tabela do relatório dando destaque pro cruzamento de informações
+            st.dataframe(
+                df_relatorio_display,
+                hide_index=True,
+                use_container_width=True
+            )
+            
+            if pendentes > 0:
+                st.warning("⚠️ Ainda existem itens que não foram processados pelo robô (Status em branco). Você pode rodar o robô novamente na tela de Seleção.")
+                
+    except Exception as e:
+        st.error(f"Erro ao carregar o relatório: {e}")
