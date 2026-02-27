@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 import os
+import unicodedata
 from io import BytesIO
 from difflib import SequenceMatcher
 from datetime import datetime
@@ -34,8 +35,47 @@ SUBELEMENTOS_FIXOS = {
 # FUNÇÕES DE APOIO
 # ============================
 
+def normalizar(texto):
+    """Remove acentos, converte para minúsculo e strip."""
+    texto = str(texto).strip().lower()
+    # Normaliza para NFD e remove os caracteres de acentuação (Mn = Non-spacing Mark)
+    texto = unicodedata.normalize("NFD", texto)
+    texto = "".join(c for c in texto if unicodedata.category(c) != "Mn")
+    return texto
+
+
+def radicalizar(palavra):
+    """Remove sufixos comuns em Português para igualar singular/plural/variações.
+    Ex: 'pneus' -> 'pneu', 'manutenções' -> 'manutencao', 'materiais' -> 'material'
+    Não usa biblioteca externa — lógica simples baseada nos sufixos mais comuns.
+    """
+    p = normalizar(palavra)
+    # Ordem importa: sufixos maiores primeiro
+    for sufixo, reposicao in [
+        ("ções", "cao"),   # manutenções  -> manutencao
+        ("çoes", "cao"),   # variante sem acento
+        ("cões", "cao"),
+        ("ções", "cao"),
+        ("ções", ""),
+        ("ões", "ao"),     # galpões      -> galpao
+        ("ões", ""),
+        ("ais", "al"),     # materiais    -> material
+        ("eis", "el"),     # papéis       -> papel
+        ("ois", "ol"),     # caracóis     -> caracol
+        ("uis", "ul"),
+        ("ões", "ao"),
+        ("es",  ""),       # pneus/lotes re lote
+        ("s",   ""),       # parafusos -> parafuso
+    ]:
+        sufixo_n = normalizar(sufixo)
+        if p.endswith(sufixo_n) and len(p) > len(sufixo_n) + 3:
+            p = p[: -len(sufixo_n)] + reposicao
+            break
+    return p
+
+
 def similaridade(a, b):
-    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+    return SequenceMatcher(None, normalizar(a), normalizar(b)).ratio()
 
 
 def extrair_elemento(dotacao_completa):
@@ -44,7 +84,9 @@ def extrair_elemento(dotacao_completa):
 
 
 def classificar_por_palavra_chave(descricao, df_keywords, elemento):
-    descricao = descricao.upper()
+    desc_norm = normalizar(descricao)    # ex: "aquisicao de pneus" 
+    desc_radical = radicalizar(desc_norm)  # ex: "aquisicao de pneu"
+
     df_filtrado = df_keywords[df_keywords["ELEMENTO"] == elemento]
     for _, row in df_filtrado.iterrows():
         codigo = str(row["CODIGO"]).zfill(2)
@@ -52,8 +94,15 @@ def classificar_por_palavra_chave(descricao, df_keywords, elemento):
         palavras = str(row["PALAVRAS"]).upper().split(",")
         for palavra in palavras:
             palavra = palavra.strip()
-            if palavra and palavra in descricao:
-                return codigo, nome, 1.0
+            if not palavra:
+                continue
+            # Normalizar a palavra-chave da planilha
+            pnorm = normalizar(palavra)       # ex: "pneu"
+            pradical = radicalizar(pnorm)     # ex: "pneu"
+            # Testa 4 combinações (normal vs radical de ambos os lados)
+            for p in {pnorm, pradical}:
+                if p and (p in desc_norm or p in desc_radical):
+                    return codigo, nome, 1.0
     return "", "", 0
 
 
@@ -179,6 +228,11 @@ def carregar_pendentes_comlic():
         # Preenche os nulos com string vazia e mantém apenas os que realmente estão vazios
         mask_vazio = df["EMPENHO_EXISTENTE"].astype(str).str.strip().replace("nan", "") == ""
         df = df[mask_vazio].copy()
+        
+    if "Pedido" in df.columns:
+        # Tenta converter Pedido para numérico para ordenar do menor pro maior (ignorando erros)
+        df["_ordem_temp"] = pd.to_numeric(df["Pedido"], errors="coerce").fillna(999999999)
+        df = df.sort_values(by="_ordem_temp", ascending=True).drop(columns=["_ordem_temp"])
         
     return df.reset_index(drop=True)
 
@@ -498,6 +552,9 @@ st.set_page_config(page_title="GRP Bot — Organizador de Empenhos", layout="wid
 
 st.markdown("""
 <style>
+    /* Ocultar a navegação padrão de arquivos multipage do Streamlit (deixa mais limpo) */
+    [data-testid="stSidebarNav"] { display: none; }
+    
     .stDataFrame thead tr th { background-color: #1e3a5f; color: white; }
     .section-header {
         background: linear-gradient(90deg, #1e3a5f, #2e6da4);
@@ -507,6 +564,12 @@ st.markdown("""
     div[data-testid="stHorizontalBlock"] { align-items: center; }
 </style>
 """, unsafe_allow_html=True)
+
+# ====== NAVEGAÇÃO CUSTOMIZADA NA BARRA LATERAL ======
+st.sidebar.markdown('### 📂 Menu Principal')
+st.sidebar.page_link("organizadorsheets.py", label="Emissão de Empenhos", icon="🏭")
+st.sidebar.page_link("pages/2_📊_Relatorios.py", label="Relatórios Detalhados", icon="📊")
+st.sidebar.divider()
 
 st.title("🤖 GRP Bot — Organizador de Empenhos")
 st.caption("Extraia OCs do PDF, selecione e execute o robô direto do navegador.")
@@ -837,7 +900,11 @@ else:
             st.warning("Selecione ao menos um pedido.")
         else:
             # Carimba de qual aba esses pedidos vieram para o robô saber onde relatar o status
-            df_selecionados["FONTE_ORIGEM"] = st.session_state.get("fonte_dados", ABA_COMLIC)
+            nome_fonte_ui = st.session_state.get("fonte_dados", "COM/LIC (Pendentes)")
+            aba_real = FONTES.get(nome_fonte_ui, ABA_COMLIC)
+            if aba_real == "__comlic__":
+                 aba_real = ABA_COMLIC
+            df_selecionados["FONTE_ORIGEM"] = aba_real
             
             with st.spinner(f"⚙️ Gravando {n_sel} pedido(s) na aba '{ABA_EMPENHAR}'..."):
                 qtd = gravar_aba_empenhar(df_selecionados)
@@ -946,84 +1013,4 @@ else:
                     st.success("🎉 Nenhum pedido pendente restante no COM/LIC!")
 
 # ============================================================
-# SEÇÃO D — Relatório e Gestão da Última Execução
-# ============================================================
-st.divider()
-st.markdown('<div class="section-header">📊 Seção 4 — Relatório da Última Execução</div>', unsafe_allow_html=True)
-st.caption("Verifique o status, os empenhos gerados e os erros da última automação registrada na aba 'Empenhar'.")
 
-if st.button("🔄 Recarregar Relatório do Servidor", use_container_width=True):
-    st.rerun()
-
-with st.spinner("Buscando resultados da última execução..."):
-    # Carrega a aba Empenhar do zero pra ver o que o robô escreveu lá
-    try:
-        spreadsheet = conectar_sheets()
-        ws_empenhar = spreadsheet.worksheet(ABA_EMPENHAR)
-        records_empenhar = ws_empenhar.get_all_records()
-        df_relatorio = pd.DataFrame(records_empenhar)
-        
-        if df_relatorio.empty:
-            st.info("A fila de execução 'Empenhar' está limpa ou vazia.")
-        else:
-            # Prepara métricas
-            if "STATUS" not in df_relatorio.columns:
-                df_relatorio["STATUS"] = ""
-                
-            total = len(df_relatorio)
-            sucessos = len(df_relatorio[df_relatorio["STATUS"] == "SUCESSO"])
-            erros    = len(df_relatorio[df_relatorio["STATUS"].str.contains("ERRO|SEM_SALDO|COMPRA_DIRETA|JA_EMPENHADA|RETORNO", na=False)])
-            pendentes = total - sucessos - erros
-
-            # Exibe os cartões
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("📦 Total Selecionado", total)
-            c2.metric("✅ Sucessos", sucessos)
-            c3.metric("❌ Erros / Impedimentos", erros)
-            c4.metric("⏳ Pendentes", pendentes)
-            
-            # Filtros para o painel de erros
-            col_f1, col_f2 = st.columns(2)
-            
-            with col_f1:
-                filtro_relatorio = st.selectbox(
-                    "Filtrar por Status:",
-                    ["Todos os Registros", "Mostrar Apenas Erros ❌", "Mostrar Apenas Sucessos ✅"]
-                )
-                
-            with col_f2:
-                # Pega as fontes de origem únicas se a coluna existir, senão põe só 'Todas as Abas'
-                opcoes_fonte = ["Todas as Abas"]
-                if "FONTE_ORIGEM" in df_relatorio.columns:
-                    fontes_unicas = df_relatorio["FONTE_ORIGEM"].dropna().unique().tolist()
-                    opcoes_fonte.extend(fontes_unicas)
-                    
-                filtro_origem = st.selectbox(
-                    "Filtrar por Aba de Origem:",
-                    opcoes_fonte
-                )
-            
-            df_relatorio_display = df_relatorio.copy()
-            
-            # Aplica filtro de Status
-            if filtro_relatorio == "Mostrar Apenas Erros ❌":
-                df_relatorio_display = df_relatorio_display[~df_relatorio_display["STATUS"].isin(["SUCESSO", ""])]
-            elif filtro_relatorio == "Mostrar Apenas Sucessos ✅":
-                df_relatorio_display = df_relatorio_display[df_relatorio_display["STATUS"] == "SUCESSO"]
-                
-            # Aplica filtro de Aba de Origem
-            if filtro_origem != "Todas as Abas" and "FONTE_ORIGEM" in df_relatorio_display.columns:
-                df_relatorio_display = df_relatorio_display[df_relatorio_display["FONTE_ORIGEM"] == filtro_origem]
-
-            # Exibe a tabela do relatório dando destaque pro cruzamento de informações
-            st.dataframe(
-                df_relatorio_display,
-                hide_index=True,
-                use_container_width=True
-            )
-            
-            if pendentes > 0:
-                st.warning("⚠️ Ainda existem itens que não foram processados pelo robô (Status em branco). Você pode rodar o robô novamente na tela de Seleção.")
-                
-    except Exception as e:
-        st.error(f"Erro ao carregar o relatório: {e}")

@@ -136,16 +136,24 @@ def abrir_novo_empenho(page, tentativas=3):
    
 def preencher_ordem_compra(page, oc):
     # pega o INPUT depois que o CONTAINER está visível
-        campo_oc = page.locator(
+    campo_oc = page.locator(
         "dx-number-box.dx-numberbox input[role='spinbutton']:visible"
     ).first
 
-        campo_oc.wait_for(state="visible", timeout=20000)
+    campo_oc.wait_for(state="visible", timeout=20000)
+    # ESPECÍFICO PARA PCs RÁPIDOS: 
+    # Esperar o Elemento DOM "acordar" os listeners do JavaScript antes de digitar.
+    page.wait_for_timeout(1000)
 
     # força o clique (agora é seguro)
-        campo_oc.click(force=True)
-        campo_oc.fill(str(oc))
-        campo_oc.press("Tab")
+    campo_oc.click(force=True)
+    page.wait_for_timeout(200) # dá um fôlego para o clique registrar no backend Vue/React/DevExpress
+    campo_oc.fill(str(oc))
+    page.wait_for_timeout(300) 
+    campo_oc.press("Tab")
+    
+    # Pausa depois do Tab, já que isso normalmente dispara eventos Ajax/Validação
+    page.wait_for_timeout(500)
 
       
 def normalizar_numero_excel(valor):
