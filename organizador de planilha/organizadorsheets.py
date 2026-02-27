@@ -36,11 +36,17 @@ SUBELEMENTOS_FIXOS = {
 # ============================
 
 def normalizar(texto):
-    """Remove acentos, converte para minúsculo e strip."""
+    """Remove acentos, converte para minúsculo e strip.
+    Também compacta espaços entre número e unidades de medida (ex: '4 mg' -> '4mg').
+    """
     texto = str(texto).strip().lower()
     # Normaliza para NFD e remove os caracteres de acentuação (Mn = Non-spacing Mark)
     texto = unicodedata.normalize("NFD", texto)
     texto = "".join(c for c in texto if unicodedata.category(c) != "Mn")
+    # Compacta: "4 mg" -> "4mg", "500 ml" -> "500ml", "10 mcg" -> "10mcg"
+    # Unidades mais comuns em medicamentos e materiais
+    unidades = r"(mg|ml|mcg|g|kg|ui|un|cp|comp|amp|comp|cap|fr|fr|tab|vd|vial|l|ul)"
+    texto = re.sub(r"(\d)\s+" + unidades + r"\b", r"\1\2", texto)
     return texto
 
 
@@ -97,12 +103,18 @@ def classificar_por_palavra_chave(descricao, df_keywords, elemento):
             if not palavra:
                 continue
             # Normalizar a palavra-chave da planilha
-            pnorm = normalizar(palavra)       # ex: "pneu"
-            pradical = radicalizar(pnorm)     # ex: "pneu"
-            # Testa 4 combinações (normal vs radical de ambos os lados)
+            pnorm = normalizar(palavra)       # ex: "5mg"
+            pradical = radicalizar(pnorm)     # ex: "5mg" (sem mudança p/ dosagens)
+            # Usa \b (word boundary) para evitar que "5mg" bata dentro de "25mg"
             for p in {pnorm, pradical}:
-                if p and (p in desc_norm or p in desc_radical):
-                    return codigo, nome, 1.0
+                if not p:
+                    continue
+                try:
+                    padrao = r"\b" + re.escape(p) + r"\b"
+                    if re.search(padrao, desc_norm) or re.search(padrao, desc_radical):
+                        return codigo, nome, 1.0
+                except re.error:
+                    pass  # Se a palavra virar regex inválida, ignora
     return "", "", 0
 
 
