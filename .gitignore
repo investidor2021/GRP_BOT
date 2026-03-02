@@ -1,7 +1,18 @@
-# Credenciais e configuração sensível
+# ============================================================
+# Credenciais e configuração sensível — NUNCA versionar
+# ============================================================
+.env
 credenciais.json
 organizador de planilha/credenciais.json
-.env
+*.json
+# Chaves SSH e certificados
+*.key
+*.pem
+*.pub
+*.ppk
+# Logs do robô
+robo.log
+*.log
 
 # Locks do Excel
 ~$*.xlsx
