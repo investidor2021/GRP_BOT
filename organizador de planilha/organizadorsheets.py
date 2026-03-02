@@ -759,7 +759,17 @@ else:
         df_base["DOTACAO"] = ""
 
     # Pega TODAS as colunas que vieram da aba carregada, mantendo "Selecionar" em primeiro
-    colunas_editor = ["Selecionar"] + [c for c in df_base.columns if c != "Selecionar"]
+    # Para Padrões: prioriza as colunas mais relevantes para inspeção no início
+    fonte_atual_cols = st.session_state.get("fonte_dados", "")
+    if fonte_atual_cols and "Padrao" in fonte_atual_cols:
+        PRIORIDADE = ["DOTACAO", "FORNECEDOR", "CREDOR", "VALOR", "DATA", "HISTORICO"]
+        # Descobre quais colunas prioritárias existem no df (na ordem definida acima)
+        cols_prio = [c for c in PRIORIDADE if c in df_base.columns]
+        # Demais colunas (exceto Selecionar e as já priorizadas)
+        cols_resto = [c for c in df_base.columns if c not in PRIORIDADE and c != "Selecionar"]
+        colunas_editor = ["Selecionar"] + cols_prio + cols_resto
+    else:
+        colunas_editor = ["Selecionar"] + [c for c in df_base.columns if c != "Selecionar"]
 
     # -------------------------------------------------------------
     # SINCRONIZAÇÃO PREVENTIVA DE ESTADO (Para não perder os tiques)
