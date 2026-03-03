@@ -9,6 +9,93 @@ def preencher_input(page, rotulo, valor):
     campo.fill(str(valor))
     campo.press("Enter")
 
+
+def preencher_valor_dotacao(page, valor, timeout=15000):
+    """
+    Preenche o campo 'Valor' em empenhos por dotação.
+    O foco chega aqui via Tab (do campo Data ou direto do credor).
+    O campo é dx-numberbox Angular DevExtreme (locale BR):
+      - Ponto é separador de milhar → '84.96' vira 8496
+      - Vírgula pode ser ignorada  → '84,96' vira 8496
+    Solução: usar DevExtreme JS API para setar o valor como float diretamente.
+    """
+    # Converte qualquer formato ('84,96' / '84.96' / 84.96) para float puro
+    # Converte qualquer formato ('84,96' / '84.96' / 84.96) para float puro e cria string BR
+    try:
+        if isinstance(valor, str):
+            valor_float = float(valor.replace(".", "").replace(",", "."))
+        else:
+            valor_float = float(valor)
+    except (ValueError, TypeError):
+        valor_float = None
+    # Formata para o padrão brasileiro com vírgula, se possível
+    if valor_float is not None:
+        valor_br = f"{valor_float:.2f}".replace(".", ",")
+    else:
+        valor_br = str(valor)
+
+    print(f"⏳ Aguardando campo 'Valor' ficar ativo...")
+
+    # Aguarda o campo estar habilitado no DOM
+    campo = (
+        page.locator("label:has-text('Valor:')")
+        .locator("xpath=following-sibling::div")
+        .locator("input.dx-texteditor-input")
+        .first
+    )
+    campo.wait_for(state="attached", timeout=timeout)
+    campo_el = campo.element_handle(timeout=timeout)
+    page.wait_for_function(
+        "(el) => el && !el.disabled && !el.readOnly",
+        arg=campo_el,
+        timeout=timeout
+    )
+    # Formato BR para exibição no log: ex 84.96 → "84,96"
+    valor_br = f"{valor_float:.2f}".replace(".", ",") if valor_float is not None else str(valor)
+    print(f"✅ Campo 'Valor' habilitado! Float={valor_float} | BR='{valor_br}'")
+
+    # ✅ Estratégia 1: DevExtreme JS API (funciona em apps jQuery/não-Angular)
+    if valor_float is not None:
+        resultado = page.evaluate(f"""
+            (() => {{
+                try {{
+                    const dxEl = document.querySelector('dx-number-box.dx-numberbox');
+                    if (dxEl) {{
+                        const instance = DevExpress.ui.dxNumberBox.getInstance(dxEl);
+                        if (instance) {{
+                            instance.option('value', {valor_float});
+                            return 'ok_devextreme';
+                        }}
+                    }}
+                    return 'sem_instancia';
+                }} catch(e) {{
+                    return 'erro: ' + e.message;
+                }}
+            }})()
+        """)
+        print(f"   DevExtreme API: {resultado}")
+        if resultado == "ok_devextreme":
+            page.wait_for_timeout(200)
+            page.keyboard.press("Tab")
+            return
+
+    # ✅ Estratégia 2: Native Input Value Setter (Angular + qualquer framework)
+    # Usa o setter nativo do HTMLInputElement para bypassar o DevExtreme,
+    # depois dispara os eventos que Angular/DevExtreme escutam.
+    # O valor é passado em formato BR (vírgula decimal) que o locale aceita.
+    print(f"⚠️ Usando native setter com valor BR: '{valor_br}'")
+    campo.evaluate(f"""el => {{
+        const nativeSetter = Object.getOwnPropertyDescriptor(
+            window.HTMLInputElement.prototype, 'value'
+        ).set;
+        nativeSetter.call(el, '{valor_br}');
+        el.dispatchEvent(new Event('input',  {{ bubbles: true }}));
+        el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+        el.dispatchEvent(new Event('blur',   {{ bubbles: true }}));
+    }}""")
+    page.wait_for_timeout(300)
+    page.keyboard.press("Tab")
+
 def selecionar_combo_habilitado(page, rotulo, valor):
     campo = (
         page.locator(f"label:has-text('{rotulo}')")
@@ -160,7 +247,7 @@ def normalizar_numero_excel(valor):
     if valor is None:
         return ""
 
-    # se vier como float (61.0)
+    # se vier como float nativo (61.0)
     if isinstance(valor, float):
         return str(int(valor))
 
@@ -168,17 +255,43 @@ def normalizar_numero_excel(valor):
     if isinstance(valor, int):
         return str(valor)
 
-    # se já for string
-    return str(valor).strip()
+    # se vier como string — pode ter .0 do Sheets (ex: '22258.0')
+    valor_str = str(valor).strip()
+    try:
+        return str(int(float(valor_str)))
+    except (ValueError, TypeError):
+        return valor_str
 
 def normalizar_valor_excel(valor):
+    """Converte qualquer representação de valor para o formato BR (ex: 1500,00).
+    Trata: float nativo, int, string '1500.0', '1500,00', '1.500,00'.
+    """
     if valor is None:
         return ""
 
+    # float ou int nativos
     if isinstance(valor, (int, float)):
         return f"{valor:.2f}".replace(".", ",")
 
-    return str(valor).strip()
+    valor_str = str(valor).strip()
+    if not valor_str or valor_str in ("nan", "None", ""):
+        return ""
+
+    try:
+        # Sem vírgula: pode ser '1500.0' ou '1500' (ponto como decimal)
+        if "," not in valor_str:
+            return f"{float(valor_str):.2f}".replace(".", ",")
+
+        # Com ponto E vírgula: '1.500,00' (ponto=milhar, vírgula=decimal)
+        if "." in valor_str and valor_str.index(".") < valor_str.index(","):
+            valor_limpo = valor_str.replace(".", "").replace(",", ".")
+            return f"{float(valor_limpo):.2f}".replace(".", ",")
+
+        # Só vírgula: '1500,00' (vírgula como decimal)
+        return f"{float(valor_str.replace(',', '.')):.2f}".replace(".", ",")
+
+    except (ValueError, TypeError):
+        return valor_str  # devolve como veio se não conseguir parsear
 
 import pandas as pd
 
@@ -197,10 +310,13 @@ def normalizar_data_excel(valor):
         return str(valor).strip()
 
 def preencher_data_se_existir(page, valor_data):
-
-
     data = normalizar_data_excel(valor_data)
     if not data:
+        # Sem data: 2x Tab — 1º sai do credor, 2º pula o campo Data → chega no Valor
+        page.keyboard.press("Tab")
+        page.wait_for_timeout(200)
+        page.keyboard.press("Tab")
+        page.wait_for_timeout(200)
         return
 
     campo = (

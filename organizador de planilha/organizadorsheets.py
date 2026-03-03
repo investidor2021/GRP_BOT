@@ -481,9 +481,16 @@ def gravar_aba_empenhar(df_selecionados):
     outras_colunas = [c for c in df_out.columns if c not in colunas_feedback]
     df_out = df_out[outras_colunas + colunas_feedback]
 
-    # Grava na planilha na aba Empenhar
+    # PREPARAÇÃO PARA O GSPREAD:
+    # Garante que tudo é string normalizada e troca 'nan' / 'None' por vazio ""
+    df_out = df_out.astype(str)
+    df_out.replace(["nan", "None", "<NA>"], "", inplace=True)
+    # Converte valores da coluna VALOR de formato BR (vírgula) para ponto decimal e remove apóstrofo
+    if "VALOR" in df_out.columns:
+        df_out["VALOR"] = df_out["VALOR"].astype(str).str.replace(",", ".").str.lstrip("'")
+    # Grava na planilha na aba Empenhar.
     ws.update([df_out.columns.tolist()] + df_out.values.tolist(),
-              value_input_option="USER_ENTERED")
+              value_input_option="RAW")
     return len(df_out)
 
 
@@ -783,13 +790,15 @@ else:
         tabela_state = st.session_state.get(last_key, {})
         if "edited_rows" in tabela_state and tabela_state["edited_rows"]:
             for row_pos_str, edits in tabela_state["edited_rows"].items():
-                if "Selecionar" in edits:
-                    try:
-                        # row_pos_str vira a posição int
-                        real_idx = df_last_display.index[int(row_pos_str)]
-                        df_base.loc[real_idx, "Selecionar"] = edits["Selecionar"]
-                    except Exception:
-                        pass
+                try:
+                    # row_pos_str vira a posição int
+                    real_idx = df_last_display.index[int(row_pos_str)]
+                    # Sincroniza TODAS as colunas editadas (não só Selecionar)
+                    for col_name, col_val in edits.items():
+                        if col_name in df_base.columns:
+                            df_base.loc[real_idx, col_name] = col_val
+                except Exception:
+                    pass
             # Salva no banco de dados
             st.session_state["df_para_empenhar"] = df_base
 
@@ -888,11 +897,12 @@ else:
         st.write("---")
         rodar = st.form_submit_button("▶️ Confirmar Seleções e Rodar Robô", type="primary", use_container_width=True)
 
-    # FINAL DO FORM  - Lógica do LOTE e RERUN EXTERNIZADO
-    # Grava novamente as mudanças finais pro df_base
-    if "Selecionar" in df_editado.columns:
-        df_base.loc[df_editado.index, "Selecionar"] = df_editado["Selecionar"]
-        st.session_state["df_para_empenhar"] = df_base
+    # FINAL DO FORM — Sincroniza TODAS as edições feitas na tabela de volta ao df_base
+    # (antes só sincronizava "Selecionar", perdendo edições de VALOR, DATA, HISTORICO, etc.)
+    colunas_para_sync = [c for c in df_editado.columns if c in df_base.columns]
+    for col in colunas_para_sync:
+        df_base.loc[df_editado.index, col] = df_editado[col]
+    st.session_state["df_para_empenhar"] = df_base
 
     if aplicar_lote:
         linhas_sel = df_editado.index[df_editado["Selecionar"] == True]
@@ -909,6 +919,17 @@ else:
     df_selecionados = df_base[df_base["Selecionar"] == True].copy()
     n_sel = len(df_selecionados)
 
+    # ✅ FLAG DE EXECUÇÃO PENDENTE: se o usuário clicou Rodar na rodada anterior,
+    # os dados já foram consolidados no session_state pelo st.rerun() abaixo.
+    # Agora sim podemos gravar e rodar o robô com segurança.
+    if st.session_state.get("pendente_executar"):
+        st.session_state["pendente_executar"] = False
+        df_selecionados_exec = st.session_state.pop("df_selecionados_exec", df_selecionados)
+        n_exec = len(df_selecionados_exec)
+    else:
+        df_selecionados_exec = None
+        n_exec = 0
+
     if rodar:
         # 1o Bloqueio: Validar Credenciais antes de qualquer coisa
         usu_memoria = st.session_state.get("usu_grp", "").strip()
@@ -921,118 +942,113 @@ else:
         if n_sel == 0:
             st.warning("Selecione ao menos um pedido.")
         else:
-            # Carimba de qual aba esses pedidos vieram para o robô saber onde relatar o status
+            # Carimba de qual aba esses pedidos vieram
             nome_fonte_ui = st.session_state.get("fonte_dados", "COM/LIC (Pendentes)")
             aba_real = FONTES.get(nome_fonte_ui, ABA_COMLIC)
             if aba_real == "__comlic__":
                  aba_real = ABA_COMLIC
             df_selecionados["FONTE_ORIGEM"] = aba_real
-            
-            with st.spinner(f"⚙️ Gravando {n_sel} pedido(s) na aba '{ABA_EMPENHAR}'..."):
-                qtd = gravar_aba_empenhar(df_selecionados)
-            st.info(f"📋 {qtd} pedido(s) gravado(s) na aba '{ABA_EMPENHAR}'. Iniciando robô...")
 
-            # Exibe terminal de saída
-            log_area = st.empty()
-            log_lines = []
+            # Salva no session_state e faz rerun para consolidar edições diretas na tabela
+            st.session_state["df_selecionados_exec"] = df_selecionados
+            st.session_state["pendente_executar"] = True
+            st.session_state["df_para_empenhar"] = df_base
+            st.rerun()
 
-            with st.spinner("Instalando/Verificando dependências do navegador (Playwright)..."):
+    # ── EXECUÇÃO REAL DO ROBÔ (após o rerun que consolidou os dados) ──
+    if df_selecionados_exec is not None and n_exec > 0:
+        usu_memoria = st.session_state.get("usu_grp", "").strip()
+        senha_memoria = st.session_state.get("senha_grp", "").strip()
+
+        if not usu_memoria or not senha_memoria:
+            st.error("🛑 Erro: Por favor, digite seu Usuário e Senha do GRP no Menu Lateral esquerdo antes de rodar o robô!")
+            st.stop()
+
+        # DEBUG TEMPORÁRIO — mostra o que vai ser gravado na aba Empenhar
+        if "VALOR" in df_selecionados_exec.columns:
+            st.warning(f"🔍 DEBUG VALOR antes de gravar: {df_selecionados_exec['VALOR'].tolist()} | tipo: {df_selecionados_exec['VALOR'].dtype}")
+
+        with st.spinner(f"⚙️ Gravando {n_exec} pedido(s) na aba '{ABA_EMPENHAR}'..."):
+            qtd = gravar_aba_empenhar(df_selecionados_exec)
+        st.info(f"📋 {qtd} pedido(s) gravado(s) na aba '{ABA_EMPENHAR}'. Iniciando robô...")
+
+        log_area = st.empty()
+        log_lines = []
+
+        with st.spinner("Instalando/Verificando dependências do navegador (Playwright)..."):
+            try:
+                subprocess.run(
+                    [sys.executable, "-m", "playwright", "install", "chromium"],
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=True
+                )
+            except Exception as e:
+                st.warning(f"Aviso na instalação do Playwright: {e}")
+
+        with st.spinner("🤖 Robô em execução... aguarde."):
+            try:
+                custom_env = os.environ.copy()
+                custom_env["GRP_USUARIO"] = usu_memoria
+                custom_env["GRP_SENHA"] = senha_memoria
+
                 try:
-                    subprocess.run(
-                        [sys.executable, "-m", "playwright", "install", "chromium"],
-                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=True
-                    )
-                except Exception as e:
-                    st.warning(f"Aviso na instalação do Playwright: {e}")
+                    if "GRP_USUARIO" in st.secrets:
+                        custom_env["GRP_USUARIO"] = str(st.secrets["GRP_USUARIO"])
+                    if "GRP_SENHA" in st.secrets:
+                        custom_env["GRP_SENHA"] = str(st.secrets["GRP_SENHA"])
+                    for k, v in st.secrets.items():
+                        if isinstance(v, (str, int, float, bool)):
+                            custom_env[k] = str(v)
+                    if "gcp_service_account" in st.secrets:
+                        gcp_dict = dict(st.secrets["gcp_service_account"])
+                        if "GRP_USUARIO" in gcp_dict:
+                            custom_env["GRP_USUARIO"] = str(gcp_dict["GRP_USUARIO"])
+                        if "GRP_SENHA" in gcp_dict:
+                            custom_env["GRP_SENHA"] = str(gcp_dict["GRP_SENHA"])
+                except Exception:
+                    pass
 
-            with st.spinner("🤖 Robô em execução... aguarde."):
-                try:
-                    # Prepara o ambiente injetando os secrets do Streamlit OU o que o usuario digitou
-                    custom_env = os.environ.copy()
-                    
-                    # INJETA AS CREDENCIAIS DIGITADAS NA TELA DIRETO NA MEMÓRIA DO ROBÔ (Ignora .env)
-                    custom_env["GRP_USUARIO"] = usu_memoria
-                    custom_env["GRP_SENHA"] = senha_memoria
-                    
-                    # LOG PARA DEBUG: Mostrar as chaves disponíveis nos secrets pro usuário ver
-                    try:
-                        chaves_disponiveis = list(st.secrets.keys())
-                        # st.warning(f"Chaves de secrets encontradas no Streamlit: {chaves_disponiveis}")
-                    except Exception as e:
-                        pass
+                proc = subprocess.Popen(
+                    [sys.executable, os.path.abspath(MAIN_PY_PATH)],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    cwd=os.path.dirname(os.path.abspath(MAIN_PY_PATH)),
+                    env=custom_env
+                )
+                for line in proc.stdout:
+                    log_lines.append(line.rstrip())
+                    log_area.code("\n".join(log_lines[-40:]), language="bash")
+                proc.wait()
 
-                    try:
-                        if "GRP_USUARIO" in st.secrets:
-                            custom_env["GRP_USUARIO"] = str(st.secrets["GRP_USUARIO"])
-                        if "GRP_SENHA" in st.secrets:
-                            custom_env["GRP_SENHA"] = str(st.secrets["GRP_SENHA"])
-                        
-                        # Tenta pegar tudo de forma genérica para garantir
-                        for k, v in st.secrets.items():
-                            if isinstance(v, (str, int, float, bool)):
-                                custom_env[k] = str(v)
-
-                        # NOVO: se a pessoa colou as senhas DENTRO do dicionario JSON por engano
-                        if "gcp_service_account" in st.secrets:
-                            gcp_dict = dict(st.secrets["gcp_service_account"])
-                            if "GRP_USUARIO" in gcp_dict:
-                                custom_env["GRP_USUARIO"] = str(gcp_dict["GRP_USUARIO"])
-                            if "GRP_SENHA" in gcp_dict:
-                                custom_env["GRP_SENHA"] = str(gcp_dict["GRP_SENHA"])
-                            
-                    except Exception:
-                        pass
-
-                    proc = subprocess.Popen(
-                        [sys.executable, os.path.abspath(MAIN_PY_PATH)],
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                        encoding="utf-8",
-                        errors="replace",
-                        cwd=os.path.dirname(os.path.abspath(MAIN_PY_PATH)),
-                        env=custom_env
-                    )
-                    for line in proc.stdout:
-                        log_lines.append(line.rstrip())
-                        log_area.code("\n".join(log_lines[-40:]), language="bash")
-                    proc.wait()
-
-                    if proc.returncode == 0:
-                        st.success("✅ Robô finalizado com sucesso!")
-                        st.cache_data.clear()  # atualiza os dados na próxima carga
-                    else:
-                        st.error(f"❌ Robô retornou código de saída {proc.returncode}. Verifique o log acima.")
-
-                except FileNotFoundError:
-                    st.error(f"❌ Arquivo do robô não encontrado: {os.path.abspath(MAIN_PY_PATH)}")
-                except Exception as e:
-                    st.error(f"❌ Erro ao executar o robô: {e}")
-
-            # Recarrega os pendentes após execução
-            with st.spinner("Atualizando lista de pendentes..."):
-                df_updated = carregar_pendentes_comlic()
-                st.session_state["df_para_empenhar"] = df_updated
-
-            if proc.returncode != 0:
-                st.error("⚠️ Ocorreram erros durante a execução do robô. Verifique os logs acima.")
-                
-            # EXIBIR O PRINT DE ERRO SE EXISTIR
-            if os.path.exists("erro_tela_oracle.png"):
-                st.error("📸 O robô capturou a tela exata no momento em que travou!")
-                st.image("erro_tela_oracle.png", caption="Visão do Robô Invisível no momento do Erro", use_container_width=True)
-                # Opcional: deletar após exibir para não confundir o próximo rodar
-                # try:
-                #     os.remove("erro_tela_oracle.png")
-                # except:
-                #     pass
-            
-            else:
-                st.success("✅ Execução concluída!")
-                if not df_updated.empty:
-                    st.info(f"🔄 {len(df_updated)} pedido(s) ainda pendente(s) no COM/LIC.")
+                if proc.returncode == 0:
+                    st.success("✅ Robô finalizado com sucesso!")
+                    st.cache_data.clear()
                 else:
-                    st.success("🎉 Nenhum pedido pendente restante no COM/LIC!")
+                    st.error(f"❌ Robô retornou código de saída {proc.returncode}. Verifique o log acima.")
+
+            except FileNotFoundError:
+                st.error(f"❌ Arquivo do robô não encontrado: {os.path.abspath(MAIN_PY_PATH)}")
+            except Exception as e:
+                st.error(f"❌ Erro ao executar o robô: {e}")
+
+        with st.spinner("Atualizando lista de pendentes..."):
+            df_updated = carregar_pendentes_comlic()
+            st.session_state["df_para_empenhar"] = df_updated
+
+        if proc.returncode != 0:
+            st.error("⚠️ Ocorreram erros durante a execução do robô. Verifique os logs acima.")
+
+        if os.path.exists("erro_tela_oracle.png"):
+            st.error("📸 O robô capturou a tela exata no momento em que travou!")
+            st.image("erro_tela_oracle.png", caption="Visão do Robô Invisível no momento do Erro", use_container_width=True)
+        else:
+            st.success("✅ Execução concluída!")
+            if not df_updated.empty:
+                st.info(f"🔄 {len(df_updated)} pedido(s) ainda pendente(s) no COM/LIC.")
+            else:
+                st.success("🎉 Nenhum pedido pendente restante no COM/LIC!")
 
 # ============================================================
 

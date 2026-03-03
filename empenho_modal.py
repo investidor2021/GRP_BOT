@@ -1,4 +1,4 @@
-from campos import preencher_input, preencher_combo, registrar_resultado, selecionar_combo_habilitado, preencher_textarea, preencher_numero, preencher_ordem_compra, abrir_novo_empenho,normalizar_numero_excel,normalizar_valor_excel
+from campos import preencher_input, preencher_valor_dotacao, preencher_combo, registrar_resultado, selecionar_combo_habilitado, preencher_textarea, preencher_numero, preencher_ordem_compra, abrir_novo_empenho,normalizar_numero_excel,normalizar_valor_excel
 from campos import preencher_data_se_existir,normalizar_subelemento, verificar_oc_sem_saldo_e_abortar, fechar_empenho_e_voltar
 from campos import tratar_oc_ja_empenhada, normalizar_subelemento2, verificar_compra_direta_nao_encontrada, finalizar_empenho, tratar_popup_impressao_empenho, tratar_popup_aditamento
 
@@ -14,7 +14,7 @@ def preencher_empenho_dotacao(page, row, dry_run=False):
     page.keyboard.press("Tab")
 
     # fornecedor já vem depois
-    page.keyboard.type(str((normalizar_subelemento2(row["FORNECEDOR"]))), delay=50)
+    page.keyboard.type(str(normalizar_numero_excel(row["FORNECEDOR"])), delay=50)
     
     opcao = page.locator("div[role='option']").first
     opcao.wait_for(state="attached", timeout=5000)
@@ -22,8 +22,9 @@ def preencher_empenho_dotacao(page, row, dry_run=False):
     page.keyboard.press("ArrowDown")
     page.keyboard.press("Enter")
 
+   
     preencher_data_se_existir(page, row.get("DATA"))
-    preencher_input(page, "Valor",(normalizar_valor_excel (row["VALOR"])))
+    preencher_valor_dotacao(page, normalizar_valor_excel(row["VALOR"]))
     preencher_textarea(page, "Histórico", row["HISTORICO"])
 
    # aqui é onde a mágica acontece
