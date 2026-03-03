@@ -19,7 +19,8 @@ SPREADSHEET_KEY   = "1EJN2eziO3rpv2KFavAMIJbD7UQyZZOChGLXt81VTHww"
 ABA_COMLIC        = "COM/LIC"
 ABA_EMPENHAR      = "Empenhar"
 CREDENCIAIS_PATH  = os.path.join(os.path.dirname(__file__), "credenciais.json")
-MAIN_PY_PATH      = os.path.join(os.path.dirname(__file__), "..", "main.py")
+# Caminho correto relativo à nova pasta pages/
+MAIN_PY_PATH      = os.path.join(os.path.dirname(__file__), "..", "..", "main.py")
 
 SUBELEMENTOS_FIXOS = {
     "3.1.71.70.00": ("00", "RATEIO PELA PARTICIPAÇÃO EM CONSÓRCIO PÚBLICO"),
