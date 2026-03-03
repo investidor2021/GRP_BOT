@@ -33,8 +33,12 @@ st.markdown("""
 
 # ====== NAVEGAÇÃO ======
 st.sidebar.markdown('### 📂 Menu Principal')
-st.sidebar.page_link("organizadorsheets.py", label="Emissão de Empenhos", icon="🏭")
-st.sidebar.page_link("pages/2_📊_Relatorios.py", label="Relatórios Detalhados", icon="📊")
+st.sidebar.page_link("organizadorsheets.py", label="1. Importação de PDF", icon="📄")
+try:
+    st.sidebar.page_link("pages/1_🏭_Emissao.py", label="2. Emissão de Empenhos", icon="🏭")
+except:
+    pass
+st.sidebar.page_link("pages/2_📊_Relatorios.py", label="3. Relatórios Detalhados", icon="📊")
 st.sidebar.divider()
 
 st.title("📊 Relatório de Execução de Empenhos")

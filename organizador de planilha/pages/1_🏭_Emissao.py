@@ -606,63 +606,393 @@ if "texto_pdf" not in st.session_state:
 # Carrega classificadores uma vez
 df_dotacao, df_keywords = carregar_planilhas_classificacao()
 
+
 # ============================================================
-# SEÇÃO A — Upload de PDF
+# MENU LATERAL — Carregar Dados para Empenhar
 # ============================================================
-st.markdown('<div class="section-header">📄 Seção 1 — Importar PDF de Pedidos</div>', unsafe_allow_html=True)
+st.sidebar.markdown('### 🔄 Fontes de Dados (Planilha)')
 
-uploaded_file = st.file_uploader("Envie o PDF de pedidos (Compras Diretas/OCs)", type="pdf")
+FONTES = {
+    "COM/LIC (Pendentes)": "__comlic__",
+    "Padrao Estudante":    "Padrao Estudante",
+    "Padrao Frente":       "Padrao Frente",
+    "Padrao Postinho":     "Padrao Postinho",
+    "Padrao Militar":      "Padrao Militar",
+}
 
-if uploaded_file:
-    with st.spinner("Extraindo dados do PDF..."):
-        texto_pdf, df_extraido = extrair_dados_pdf(uploaded_file, df_dotacao, df_keywords)
+fonte_sel = st.sidebar.selectbox(
+    "Escolha qual aba carregar:",
+    options=list(FONTES.keys()),
+    key="fonte_dados"
+)
 
-    st.session_state["texto_pdf"] = texto_pdf
-
-    if df_extraido.empty:
-        st.warning("⚠️ Nenhum pedido encontrado no PDF.")
-    else:
-        # Carrega existentes do COM/LIC para deduplicar
-        with st.spinner("Verificando duplicatas no COM/LIC..."):
+if st.sidebar.button("🔄 Carregar Dados da Aba", use_container_width=True, type="primary"):
+    aba_key = FONTES[fonte_sel]
+    if aba_key == "__comlic__":
+        with st.spinner("Buscando pendentes no COM/LIC..."):
             df_pend = carregar_pendentes_comlic()
-            pedidos_existentes = set()
-            if not df_pend.empty and "Pedido" in df_pend.columns:
-                pedidos_existentes = set(df_pend["Pedido"].astype(str))
-
-            # Também verifica todos os registros (não só pendentes)
+        descricao = "pendente(s) no COM/LIC"
+    else:
+        with st.spinner(f"Carregando {fonte_sel}..."):
             try:
-                spreadsheet = conectar_sheets()
-                ws_cl = spreadsheet.worksheet(ABA_COMLIC)
-                todos = ws_cl.get_all_records()
-                if todos:
-                    df_todos = pd.DataFrame(todos)
-                    if "Pedido" in df_todos.columns:
-                        pedidos_existentes.update(df_todos["Pedido"].astype(str))
-            except Exception:
-                pass
+                df_pend = carregar_aba_padrao(aba_key)
+                descricao = f"registro(s) de '{fonte_sel}'"
+            except Exception as e:
+                st.sidebar.error(f"❌ Erro ao carregar aba '{aba_key}': {e}")
+                df_pend = pd.DataFrame()
+                descricao = ""
+                
+    if df_pend.empty:
+        st.sidebar.info(f"ℹ️ Nenhum registro encontrado em '{fonte_sel}'.")
+    else:
+        st.session_state["df_para_empenhar"] = df_pend
+        st.sidebar.success(f"✅ {len(df_pend)} {descricao} carregado(s).")
 
-        df_novos = df_extraido[~df_extraido["Pedido"].astype(str).isin(pedidos_existentes)].copy()
-        df_duplic = df_extraido[df_extraido["Pedido"].astype(str).isin(pedidos_existentes)].copy()
+if fonte_sel == "COM/LIC (Pendentes)":
+    if st.sidebar.button("🪄 Tentar preencher Subelementos vazios (COM/LIC)", help="Busca subelementos faltantes da aba COM/LIC usando a classificação de palavras-chave da aba Subelemento"):
+        with st.spinner("Analisando palavras-chave para linhas com Subelemento vazio na planilha..."):
+            vazios, corrigidos = atualizar_subelementos_vazios(df_dotacao, df_keywords)
+            
+            if vazios == 0:
+                st.sidebar.info("Nenhuma linha no COM/LIC está com o campo Subelemento vazio.")
+            elif corrigidos == 0:
+                st.sidebar.warning(f"As {vazios} linhas vazias foram verificadas, mas não batem com nenhuma regra/palavra-chave.")
+            else:
+                st.sidebar.success(f"🎉 {corrigidos} de {vazios} Subelementos vazios foram atualizados direto na planilha!")
+                st.cache_data.clear() # Limpa o cache
+                st.rerun() # Atualiza a tela pra exibir tudo
 
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.success(f"✅ {len(df_extraido)} pedidos extraídos | 🆕 {len(df_novos)} novos | ⏭️ {len(df_duplic)} já existem no COM/LIC")
-        with col2:
-            if st.button("📤 Enviar novos para COM/LIC", disabled=df_novos.empty, use_container_width=True):
-                with st.spinner("Gravando no COM/LIC..."):
-                    resultado = gravar_comlic(df_novos)
-                if resultado == "gravado":
-                    st.success(f"📌 {len(df_novos)} novo(s) pedido(s) gravado(s) no COM/LIC!")
-                    st.cache_data.clear()
-                elif resultado == "duplicado":
-                    st.warning("⚠️ Todos já existem no COM/LIC.")
 
-        if not df_novos.empty:
-            st.caption("Novos pedidos extraídos:")
-            colunas_viz = ["Pedido", "Fornecedor", "Descrição", "Dotação", "Elemento", "Subelemento", "Descrição Subelemento", "Confiabilidade"]
-            st.dataframe(df_novos[[c for c in colunas_viz if c in df_novos.columns]], use_container_width=True)
+# ============================================================
+# MENU LATERAL — Credenciais GRP
+# ============================================================
+st.sidebar.divider()
+st.sidebar.markdown('### 🔑 Acesso ao GRP')
+st.sidebar.caption("Digite suas credenciais do GRP para o robô usar:")
 
-    if st.toggle("🔍 Ver texto bruto do PDF"):
-        st.text_area("Texto bruto", st.session_state["texto_pdf"], height=200)
+usu_digitado = st.sidebar.text_input("Usuário GRP:", value=st.session_state.get("usu_grp", ""))
+senha_digitada = st.sidebar.text_input("Senha GRP:", type="password", value=st.session_state.get("senha_grp", ""))
+
+st.session_state["usu_grp"] = usu_digitado.strip()
+st.session_state["senha_grp"] = senha_digitada.strip()
+
+st.sidebar.divider()
+st.sidebar.caption("🤖 Desenvolvido para GRP PMDVGDS")
 
 st.divider()
+
+# ============================================================
+# SEÇÃO C — Seleção e Execução do Robô
+# ============================================================
+st.markdown('<div class="section-header">🤖 Seção 3 — Selecionar e Empenhar</div>', unsafe_allow_html=True)
+
+df_base = st.session_state.get("df_para_empenhar", pd.DataFrame())
+
+if df_base.empty:
+    st.info("ℹ️ Carregue o PDF (Seção 1) ou os pendentes (Seção 2) para ver os pedidos aqui.")
+else:
+    # Adiciona coluna de seleção se não tiver
+    if "Selecionar" not in df_base.columns:
+        df_base.insert(0, "Selecionar", False)
+
+    # "Pedido" do COM/LIC eh o numero da OC -> mapear para coluna OC (col B)
+    # DOTACAO (col A) eh preenchida manualmente para empenhos por dotacao
+    if "Pedido" in df_base.columns:
+        if "OC" not in df_base.columns:
+            # Sem OC: Pedido IS a OC
+            df_base.rename(columns={"Pedido": "OC"}, inplace=True)
+        else:
+            # OC existe mas pode estar vazia: preenche OC com Pedido onde OC vazia
+            mask_vazio = df_base["OC"].astype(str).str.strip().isin(["", "nan", "0"])
+            df_base.loc[mask_vazio, "OC"] = df_base.loc[mask_vazio, "Pedido"].astype(str)
+            df_base.drop(columns=["Pedido"], inplace=True, errors="ignore")
+    if "DOTACAO" not in df_base.columns:
+        df_base["DOTACAO"] = ""
+
+    # Pega TODAS as colunas que vieram da aba carregada, mantendo "Selecionar" em primeiro
+    # Para Padrões: prioriza as colunas mais relevantes para inspeção no início
+    fonte_atual_cols = st.session_state.get("fonte_dados", "")
+    if fonte_atual_cols and "Padrao" in fonte_atual_cols:
+        PRIORIDADE = ["DOTACAO", "FORNECEDOR", "CREDOR", "VALOR", "DATA", "HISTORICO"]
+        # Descobre quais colunas prioritárias existem no df (na ordem definida acima)
+        cols_prio = [c for c in PRIORIDADE if c in df_base.columns]
+        # Demais colunas (exceto Selecionar e as já priorizadas)
+        cols_resto = [c for c in df_base.columns if c not in PRIORIDADE and c != "Selecionar"]
+        colunas_editor = ["Selecionar"] + cols_prio + cols_resto
+    else:
+        colunas_editor = ["Selecionar"] + [c for c in df_base.columns if c != "Selecionar"]
+
+    # -------------------------------------------------------------
+    # SINCRONIZAÇÃO PREVENTIVA DE ESTADO (Para não perder os tiques)
+    # -------------------------------------------------------------
+    # Se a tabela foi mexida antes de um reload para busca, extrai os tiques da memoria bruta do Streamlit
+    import hashlib
+    last_key = st.session_state.get("last_widget_key", None)
+    df_last_display = st.session_state.get("last_df_display", None)
+    
+    if last_key and df_last_display is not None:
+        tabela_state = st.session_state.get(last_key, {})
+        if "edited_rows" in tabela_state and tabela_state["edited_rows"]:
+            for row_pos_str, edits in tabela_state["edited_rows"].items():
+                try:
+                    # row_pos_str vira a posição int
+                    real_idx = df_last_display.index[int(row_pos_str)]
+                    # Sincroniza TODAS as colunas editadas (não só Selecionar)
+                    for col_name, col_val in edits.items():
+                        if col_name in df_base.columns:
+                            df_base.loc[real_idx, col_name] = col_val
+                except Exception:
+                    pass
+            # Salva no banco de dados
+            st.session_state["df_para_empenhar"] = df_base
+
+    # ================== FORMULÁRIO GIGANTE DA TABELA ==================
+    # Envolver tudo num Formulario impede a tela de piscar a cada unico clique!
+    with st.form("form_tabela_empenhos"):
+        # --- FILTROS ---
+        st.markdown("**🔍 Filtros da Tabela:**")
+        col_f1, col_f2, col_f3 = st.columns([3, 3, 2])
+        with col_f1:
+            filtro_pedido = st.text_input("Por Número do Pedido / OC:", "")
+        with col_f2:
+            filtro_fornecedor = st.text_input("Por Nome do Fornecedor / Credor:", "")
+        with col_f3:
+            st.write("")
+            st.write("")
+            btn_filtrar = st.form_submit_button("🔍 Buscar/Aplicar", use_container_width=True)
+
+        # 1. Aplicar os filtros na base de dados
+        mask_filtro = pd.Series(True, index=df_base.index)
+        if filtro_pedido.strip():
+            mask_filtro &= df_base["OC"].astype(str).str.contains(filtro_pedido.strip(), case=False, na=False)
+        if filtro_fornecedor.strip():
+            col_forn = next((c for c in df_base.columns if c.upper() in ["FORNECEDOR", "CREDOR"]), None)
+            if col_forn:
+                mask_filtro &= df_base[col_forn].astype(str).str.contains(filtro_fornecedor.strip(), case=False, na=False)
+                
+        df_base_display = df_base[mask_filtro].copy()
+
+        # 2. Garantias do Tipo TextColumn
+        for col in df_base_display.select_dtypes(include=['integer', 'float']).columns:
+            if col != 'Selecionar':
+                df_base_display[col] = df_base_display[col].astype(str).replace("nan", "")
+        if 'Subelemento' in df_base_display.columns:
+            df_base_display['Subelemento'] = df_base_display['Subelemento'].astype(str).str.strip().str.zfill(2)
+        elif 'SUBELEMENTO' in df_base_display.columns:
+            df_base_display['SUBELEMENTO'] = df_base_display['SUBELEMENTO'].astype(str).str.strip().str.zfill(2)
+
+        st.caption(f"📋 {len(df_base_display)} pedido(s) correspondente(s) aos filtros. Marque os que deseja empenhar:")
+
+        # 3. Botões Rápidos Visuais DENTRO do Form (O botão Marcar não faz reload desnecessario de fora pra dentro)
+        col_sel1, col_sel2, _ = st.columns([3, 3, 6])
+        with col_sel1:
+             marcar_tudo = st.form_submit_button("☑️ Marcar Todas Visíveis", use_container_width=True)
+        with col_sel2:
+             desmarcar_tudo = st.form_submit_button("🔲 Desmarcar Todas Visíveis", use_container_width=True)
+
+        if marcar_tudo:
+             df_base.loc[df_base_display.index, "Selecionar"] = True
+             df_base_display["Selecionar"] = True
+             st.session_state["df_para_empenhar"] = df_base
+        if desmarcar_tudo:
+             df_base.loc[df_base_display.index, "Selecionar"] = False
+             df_base_display["Selecionar"] = False
+             st.session_state["df_para_empenhar"] = df_base
+
+        # 4. Config da Tabela Visual
+        config = { "Selecionar": st.column_config.CheckboxColumn("✅ Selecionar", default=False, width="small") }
+        for col in colunas_editor:
+            if col != "Selecionar":
+                config[col] = st.column_config.TextColumn(col)
+
+        # 5. Lote de Substituição 
+        fonte_atual = st.session_state.get("fonte_dados", "")
+        if fonte_atual and "Padrao" in fonte_atual:
+            st.markdown("**✏️ Edição em Lote (Aplicar nas linhas com 'Tique' ativas abaixo):**")
+            col_lote1, col_lote2, col_lote3, col_lote4 = st.columns([2, 2, 4, 3])
+            with col_lote1:
+                lote_data = st.text_input("Data:", key="lote_data", placeholder="Ex: 01/01/2026")
+            with col_lote2:
+                lote_valor = st.text_input("Valor:", key="lote_valor", placeholder="Ex: 2500,00")
+            with col_lote3:
+                lote_hist = st.text_input("Histórico:", key="lote_hist")
+            with col_lote4:
+                st.write("") 
+                st.write("")
+                aplicar_lote = st.form_submit_button("🔽 Aplicar aos Selecionados", use_container_width=True)
+        else:
+            aplicar_lote = False
+
+        # 6. Renderizando o Data Editor com Chave Única Inteligente (impede fantasmas de views antigos)
+        hash_str = f"{filtro_pedido}_{filtro_fornecedor}_{marcar_tudo}_{desmarcar_tudo}"
+        widget_key = "tabela_" + hashlib.md5(hash_str.encode()).hexdigest()
+        
+        st.session_state["last_widget_key"] = widget_key
+        st.session_state["last_df_display"] = df_base_display
+
+        df_editado = st.data_editor(
+            df_base_display[colunas_editor],
+            column_config=config,
+            hide_index=True,
+            use_container_width=False,
+            key=widget_key
+        )
+        
+        st.write("---")
+        rodar = st.form_submit_button("▶️ Confirmar Seleções e Rodar Robô", type="primary", use_container_width=True)
+
+    # FINAL DO FORM — Sincroniza TODAS as edições feitas na tabela de volta ao df_base
+    # (antes só sincronizava "Selecionar", perdendo edições de VALOR, DATA, HISTORICO, etc.)
+    colunas_para_sync = [c for c in df_editado.columns if c in df_base.columns]
+    for col in colunas_para_sync:
+        df_base.loc[df_editado.index, col] = df_editado[col]
+    st.session_state["df_para_empenhar"] = df_base
+
+    if aplicar_lote:
+        linhas_sel = df_editado.index[df_editado["Selecionar"] == True]
+        if len(linhas_sel) == 0:
+            st.warning("⚠️ Selecione ao menos uma linha na tabela dando um 'Tique' antes de aplicar o Lote.")
+        else:
+            if lote_data.strip():  df_base.loc[linhas_sel, "DATA"] = lote_data.strip()
+            if lote_valor.strip(): df_base.loc[linhas_sel, "VALOR"] = lote_valor.strip()
+            if lote_hist.strip():  df_base.loc[linhas_sel, "HISTORICO"] = lote_hist.strip()
+            st.session_state["df_para_empenhar"] = df_base
+            st.success(f"✅ Valores em lote preenchidos em {len(linhas_sel)} linha(s)!")
+            st.rerun()
+
+    df_selecionados = df_base[df_base["Selecionar"] == True].copy()
+    n_sel = len(df_selecionados)
+
+    # ✅ FLAG DE EXECUÇÃO PENDENTE: se o usuário clicou Rodar na rodada anterior,
+    # os dados já foram consolidados no session_state pelo st.rerun() abaixo.
+    # Agora sim podemos gravar e rodar o robô com segurança.
+    if st.session_state.get("pendente_executar"):
+        st.session_state["pendente_executar"] = False
+        df_selecionados_exec = st.session_state.pop("df_selecionados_exec", df_selecionados)
+        n_exec = len(df_selecionados_exec)
+    else:
+        df_selecionados_exec = None
+        n_exec = 0
+
+    if rodar:
+        # 1o Bloqueio: Validar Credenciais antes de qualquer coisa
+        usu_memoria = st.session_state.get("usu_grp", "").strip()
+        senha_memoria = st.session_state.get("senha_grp", "").strip()
+        
+        if not usu_memoria or not senha_memoria:
+            st.error("🛑 Erro: Por favor, digite seu Usuário e Senha do GRP no Menu Lateral esquerdo antes de rodar o robô!")
+            st.stop()
+            
+        if n_sel == 0:
+            st.warning("Selecione ao menos um pedido.")
+        else:
+            # Carimba de qual aba esses pedidos vieram
+            nome_fonte_ui = st.session_state.get("fonte_dados", "COM/LIC (Pendentes)")
+            aba_real = FONTES.get(nome_fonte_ui, ABA_COMLIC)
+            if aba_real == "__comlic__":
+                 aba_real = ABA_COMLIC
+            df_selecionados["FONTE_ORIGEM"] = aba_real
+
+            # Salva no session_state e faz rerun para consolidar edições diretas na tabela
+            st.session_state["df_selecionados_exec"] = df_selecionados
+            st.session_state["pendente_executar"] = True
+            st.session_state["df_para_empenhar"] = df_base
+            st.rerun()
+
+    # ── EXECUÇÃO REAL DO ROBÔ (após o rerun que consolidou os dados) ──
+    if df_selecionados_exec is not None and n_exec > 0:
+        usu_memoria = st.session_state.get("usu_grp", "").strip()
+        senha_memoria = st.session_state.get("senha_grp", "").strip()
+
+        if not usu_memoria or not senha_memoria:
+            st.error("🛑 Erro: Por favor, digite seu Usuário e Senha do GRP no Menu Lateral esquerdo antes de rodar o robô!")
+            st.stop()
+
+        # DEBUG TEMPORÁRIO — mostra o que vai ser gravado na aba Empenhar
+        if "VALOR" in df_selecionados_exec.columns:
+            st.warning(f"🔍 DEBUG VALOR antes de gravar: {df_selecionados_exec['VALOR'].tolist()} | tipo: {df_selecionados_exec['VALOR'].dtype}")
+
+        with st.spinner(f"⚙️ Gravando {n_exec} pedido(s) na aba '{ABA_EMPENHAR}'..."):
+            qtd = gravar_aba_empenhar(df_selecionados_exec)
+        st.info(f"📋 {qtd} pedido(s) gravado(s) na aba '{ABA_EMPENHAR}'. Iniciando robô...")
+
+        log_area = st.empty()
+        log_lines = []
+
+        with st.spinner("Instalando/Verificando dependências do navegador (Playwright)..."):
+            try:
+                subprocess.run(
+                    [sys.executable, "-m", "playwright", "install", "chromium"],
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=True
+                )
+            except Exception as e:
+                st.warning(f"Aviso na instalação do Playwright: {e}")
+
+        with st.spinner("🤖 Robô em execução... aguarde."):
+            try:
+                custom_env = os.environ.copy()
+                custom_env["GRP_USUARIO"] = usu_memoria
+                custom_env["GRP_SENHA"] = senha_memoria
+
+                try:
+                    if "GRP_USUARIO" in st.secrets:
+                        custom_env["GRP_USUARIO"] = str(st.secrets["GRP_USUARIO"])
+                    if "GRP_SENHA" in st.secrets:
+                        custom_env["GRP_SENHA"] = str(st.secrets["GRP_SENHA"])
+                    for k, v in st.secrets.items():
+                        if isinstance(v, (str, int, float, bool)):
+                            custom_env[k] = str(v)
+                    if "gcp_service_account" in st.secrets:
+                        gcp_dict = dict(st.secrets["gcp_service_account"])
+                        if "GRP_USUARIO" in gcp_dict:
+                            custom_env["GRP_USUARIO"] = str(gcp_dict["GRP_USUARIO"])
+                        if "GRP_SENHA" in gcp_dict:
+                            custom_env["GRP_SENHA"] = str(gcp_dict["GRP_SENHA"])
+                except Exception:
+                    pass
+
+                proc = subprocess.Popen(
+                    [sys.executable, os.path.abspath(MAIN_PY_PATH)],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    cwd=os.path.dirname(os.path.abspath(MAIN_PY_PATH)),
+                    env=custom_env
+                )
+                for line in proc.stdout:
+                    log_lines.append(line.rstrip())
+                    log_area.code("\n".join(log_lines[-40:]), language="bash")
+                proc.wait()
+
+                if proc.returncode == 0:
+                    st.success("✅ Robô finalizado com sucesso!")
+                    st.cache_data.clear()
+                else:
+                    st.error(f"❌ Robô retornou código de saída {proc.returncode}. Verifique o log acima.")
+
+            except FileNotFoundError:
+                st.error(f"❌ Arquivo do robô não encontrado: {os.path.abspath(MAIN_PY_PATH)}")
+            except Exception as e:
+                st.error(f"❌ Erro ao executar o robô: {e}")
+
+        with st.spinner("Atualizando lista de pendentes..."):
+            df_updated = carregar_pendentes_comlic()
+            st.session_state["df_para_empenhar"] = df_updated
+
+        if proc.returncode != 0:
+            st.error("⚠️ Ocorreram erros durante a execução do robô. Verifique os logs acima.")
+
+        if os.path.exists("erro_tela_oracle.png"):
+            st.error("📸 O robô capturou a tela exata no momento em que travou!")
+            st.image("erro_tela_oracle.png", caption="Visão do Robô Invisível no momento do Erro", use_container_width=True)
+        else:
+            st.success("✅ Execução concluída!")
+            if not df_updated.empty:
+                st.info(f"🔄 {len(df_updated)} pedido(s) ainda pendente(s) no COM/LIC.")
+            else:
+                st.success("🎉 Nenhum pedido pendente restante no COM/LIC!")
+
+# ============================================================
+
