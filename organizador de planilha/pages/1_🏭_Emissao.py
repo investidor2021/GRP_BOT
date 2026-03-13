@@ -767,15 +767,24 @@ if st.session_state.get("fonte_dados") == "Empenhos Avulsos":
         # Subelemento filtrado pelo Elemento da dotação selecionada
         # ---------------------------------------------------------
         col_elem_sub = df_keywords.columns[0]
+        col_cod_sub  = df_keywords.columns[1]
         col_nome_sub = df_keywords.columns[2]
         
-        lista_subelementos = []
+        opcoes_subelementos = []
         if elemento_str:
             sub_filtrados = df_keywords[df_keywords[col_elem_sub].astype(str).str.strip() == elemento_str]
             if not sub_filtrados.empty:
-                lista_subelementos = sub_filtrados[col_nome_sub].dropna().unique().tolist()
+                for _, rsub in sub_filtrados.dropna(subset=[col_nome_sub]).iterrows():
+                    cod = str(rsub[col_cod_sub]).strip().replace(".0", "")
+                    nome = str(rsub[col_nome_sub]).strip()
+                    opcoes_subelementos.append({"cod": cod, "nome": nome, "label": f"{cod} - {nome}"})
         
-        subelemento_sel = st.selectbox("Subelemento", [""] + [str(s) for s in lista_subelementos], key="avulso_sub")
+        item_sub_sel = st.selectbox(
+            "Subelemento",
+            options=[None] + opcoes_subelementos,
+            format_func=lambda x: x["label"] if x else "Selecione...",
+            key="avulso_sub"
+        )
         
         col1, col2 = st.columns(2)
         with col1:
@@ -796,7 +805,7 @@ if st.session_state.get("fonte_dados") == "Empenhos Avulsos":
                     "HISTORICO": historico_txt,
                     "VALOR": valor_txt,
                     "DATA": data_txt,
-                    "SUBELEMENTO": subelemento_sel,
+                    "SUBELEMENTO": str(item_sub_sel["cod"]).replace(".0", "").zfill(2) if item_sub_sel else "",
                     "FONTE": fonte_sug,
                     "APLICACAO": aplic_sug,
                     "STATUS": "", "MENSAGEM": "", "EMPENHO_EXISTENTE": "", "DATA_PROCESSAMENTO": ""
