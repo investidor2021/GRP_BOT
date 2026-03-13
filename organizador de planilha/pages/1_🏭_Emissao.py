@@ -697,62 +697,67 @@ if st.session_state.get("fonte_dados") == "Empenhos Avulsos":
     with st.expander("➕ **Adicionar Novo Empenho Avulso**", expanded=True):
         st.markdown("Preencha os campos abaixo. Ao selecionar a **Dotação**, os campos de **Fonte**, **Código Aplicação** e a lista de **Subelementos** serão ajustados automaticamente.")
         
-        col_dot = df_dotacao.columns[0]
-        col_depto_dot = df_dotacao.columns[1]
-        col_ficha_dot = df_dotacao.columns[2]
-        col_elem_dot = df_dotacao.columns[3]
-        col_desp_dot = df_dotacao.columns[4]
-        col_fonte_dot = df_dotacao.columns[8]
-        col_aplic_dot = df_dotacao.columns[10]
-        
-        col_elem_sub = df_keywords.columns[0]
-        col_nome_sub = df_keywords.columns[2]
-        
-        dict_dotacoes_formatadas = {"": "Digite para pesquisar (Ex: Ficha, Saúde, Vencimentos...)"}
-        dict_reverso = {"Digite para pesquisar (Ex: Ficha, Saúde, Vencimentos...)": ""}
-        
-        for _, row in df_dotacao.dropna(subset=[col_dot]).iterrows():
-            d = str(row[col_dot]).strip()
-            if d and d != "nan":
-                ficha = str(row[col_ficha_dot]).replace(".0", "").strip() if pd.notna(row[col_ficha_dot]) else ""
-                despesa = str(row[col_desp_dot]).strip() if pd.notna(row[col_desp_dot]) else ""
-                depto = str(row[col_depto_dot]).strip() if pd.notna(row[col_depto_dot]) else ""
+        # ---------------------------------------------------------
+        # Monta lista de opções no mesmo padrão do Projeto de Lei
+        # Cada opção é um dict com "label", "id" e dados brutos
+        # ---------------------------------------------------------
+        opcoes_dotacao = []
+        for idx, row in df_dotacao.iterrows():
+            try:
+                dotacao_val  = str(row.iloc[0]).strip()
+                depto_val    = str(row.iloc[1]).strip()
+                ficha_val    = str(row.iloc[2]).strip().replace(".0", "")
+                elemento_val = str(row.iloc[3]).strip()
+                despesa_val  = str(row.iloc[4]).strip()
+                fonte_val    = str(row.iloc[8]).strip()
+                aplic_val    = str(row.iloc[10]).strip()
                 
-                # Anexar texto normalizado (sem acentos e minúsculo) no fim da string para permitir busca por 'saude' em 'Saúde'
-                busca_facil = f"{normalizar(ficha)} {normalizar(despesa)} {normalizar(depto)}"
-                texto_formatado = f"Ficha {ficha} | Dot: {d} | {despesa} | {depto} 🔍({busca_facil})"
+                if not dotacao_val or dotacao_val == "nan":
+                    continue
                 
-                if d not in dict_dotacoes_formatadas:
-                    dict_dotacoes_formatadas[d] = texto_formatado
-                    # Evita colisão de chaves caso textos coincidam
-                    dict_reverso[texto_formatado] = d
+                label = f"Ficha: {ficha_val} - {dotacao_val} - {despesa_val} - {depto_val}"
+                
+                opcoes_dotacao.append({
+                    "label": label,
+                    "id": f"{ficha_val}-{idx}",
+                    "dotacao": dotacao_val,
+                    "ficha": ficha_val,
+                    "elemento": elemento_val,
+                    "depto": depto_val,
+                    "despesa": despesa_val,
+                    "fonte": fonte_val,
+                    "aplicacao": aplic_val,
+                })
+            except Exception:
+                continue
         
-        lista_opcoes_formatadas = list(dict_reverso.keys())
-        
-        # Passar o texto explícito no options permite que o componente do Streamlit pesquise o texto inteiro!
-        selecao_formatada = st.selectbox(
-            "Pesquise e selecione a Dotação/Ficha", 
-            options=lista_opcoes_formatadas, 
+        # ---------------------------------------------------------
+        # Selectbox com format_func (mesmo padrão do Projeto de Lei)
+        # ---------------------------------------------------------
+        item_sel = st.selectbox(
+            "🔎 Pesquise a Dotação (por Ficha, Departamento ou Descrição da Despesa)",
+            options=opcoes_dotacao,
+            format_func=lambda x: x["label"],
             key="avulso_dot_sel"
         )
         
-        # Recupera o código da dotação real
-        dotacao_sel = dict_reverso.get(selecao_formatada, "")
+        # Extrai dados da dotação selecionada
+        dotacao_sel  = item_sel["dotacao"] if item_sel else ""
+        fonte_sug    = item_sel["fonte"] if item_sel else ""
+        aplic_sug    = item_sel["aplicacao"] if item_sel else ""
+        elemento_str = item_sel["elemento"] if item_sel else ""
         
-        fonte_sug = ""
-        aplic_sug = ""
+        # ---------------------------------------------------------
+        # Subelemento filtrado pelo Elemento da dotação selecionada
+        # ---------------------------------------------------------
+        col_elem_sub = df_keywords.columns[0]
+        col_nome_sub = df_keywords.columns[2]
+        
         lista_subelementos = []
-        
-        if dotacao_sel:
-            row_dot = df_dotacao[df_dotacao[col_dot].astype(str) == dotacao_sel]
-            if not row_dot.empty:
-                fonte_sug = str(row_dot.iloc[0][col_fonte_dot]).strip()
-                aplic_sug = str(row_dot.iloc[0][col_aplic_dot]).strip()
-                elemento_str = str(row_dot.iloc[0][col_elem_dot]).strip()
-                if elemento_str:
-                     sub_filtrados = df_keywords[df_keywords[col_elem_sub].astype(str).str.strip() == elemento_str]
-                     if not sub_filtrados.empty:
-                         lista_subelementos = sub_filtrados[col_nome_sub].dropna().unique().tolist()
+        if elemento_str:
+            sub_filtrados = df_keywords[df_keywords[col_elem_sub].astype(str).str.strip() == elemento_str]
+            if not sub_filtrados.empty:
+                lista_subelementos = sub_filtrados[col_nome_sub].dropna().unique().tolist()
         
         subelemento_sel = st.selectbox("Subelemento", [""] + [str(s) for s in lista_subelementos], key="avulso_sub")
         
