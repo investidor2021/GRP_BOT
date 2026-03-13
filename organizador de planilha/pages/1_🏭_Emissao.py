@@ -698,8 +698,7 @@ if st.session_state.get("fonte_dados") == "Empenhos Avulsos":
         st.markdown("Preencha os campos abaixo. Ao selecionar a **Dotação**, os campos de **Fonte**, **Código Aplicação** e a lista de **Subelementos** serão ajustados automaticamente.")
         
         # ---------------------------------------------------------
-        # Monta lista de opções no mesmo padrão do Projeto de Lei
-        # Cada opção é um dict com "label", "id" e dados brutos
+        # Monta lista de opções (cada opção é um dict com dados)
         # ---------------------------------------------------------
         opcoes_dotacao = []
         for idx, row in df_dotacao.iterrows():
@@ -732,11 +731,28 @@ if st.session_state.get("fonte_dados") == "Empenhos Avulsos":
                 continue
         
         # ---------------------------------------------------------
-        # Selectbox com format_func (mesmo padrão do Projeto de Lei)
+        # Campo de pesquisa livre (text_input) + selectbox filtrado
         # ---------------------------------------------------------
+        pesquisa = st.text_input(
+            "🔎 Digite para filtrar (Ex: saude, vencimentos, ficha 11, educação...)",
+            key="avulso_pesquisa",
+            placeholder="Digite qualquer parte do nome, departamento, ficha..."
+        )
+        
+        # Filtra as opções usando normalização (sem acentos, minúsculo)
+        if pesquisa.strip():
+            termo = normalizar(pesquisa.strip())
+            opcoes_filtradas = [o for o in opcoes_dotacao if termo in normalizar(o["label"])]
+        else:
+            opcoes_filtradas = opcoes_dotacao
+        
+        if not opcoes_filtradas:
+            st.warning(f"Nenhuma dotação encontrada para '{pesquisa}'.")
+            opcoes_filtradas = opcoes_dotacao  # Restaura pra não ficar vazio
+        
         item_sel = st.selectbox(
-            "🔎 Pesquise a Dotação (por Ficha, Departamento ou Descrição da Despesa)",
-            options=opcoes_dotacao,
+            f"Dotação ({len(opcoes_filtradas)} resultado(s))",
+            options=opcoes_filtradas,
             format_func=lambda x: x["label"],
             key="avulso_dot_sel"
         )
