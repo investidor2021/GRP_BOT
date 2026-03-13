@@ -718,11 +718,13 @@ if st.session_state.get("fonte_dados") == "Empenhos Avulsos":
                 despesa = str(row[col_desp_dot]).strip() if pd.notna(row[col_desp_dot]) else ""
                 depto = str(row[col_depto_dot]).strip() if pd.notna(row[col_depto_dot]) else ""
                 
-                texto_formatado = f"Ficha {ficha} | Dot: {d} | {despesa} | {depto}"
+                # Anexar texto normalizado (sem acentos e minúsculo) no fim da string para permitir busca por 'saude' em 'Saúde'
+                busca_facil = f"{normalizar(ficha)} {normalizar(despesa)} {normalizar(depto)}"
+                texto_formatado = f"Ficha {ficha} | Dot: {d} | {despesa} | {depto} 🔍({busca_facil})"
                 
                 if d not in dict_dotacoes_formatadas:
                     dict_dotacoes_formatadas[d] = texto_formatado
-                    # Evita colisão de chaves caso textos coincidam (embora improvável com dotacao unica)
+                    # Evita colisão de chaves caso textos coincidam
                     dict_reverso[texto_formatado] = d
         
         lista_opcoes_formatadas = list(dict_reverso.keys())
