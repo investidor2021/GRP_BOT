@@ -615,6 +615,7 @@ st.sidebar.markdown('### 🔄 Fontes de Dados (Planilha)')
 
 FONTES = {
     "COM/LIC (Pendentes)": "__comlic__",
+    "Empenhos Avulsos":    "__avulsos__",
     "Padrao Estudante":    "Padrao Estudante",
     "Padrao Frente":       "Padrao Frente",
     "Padrao Postinho":     "Padrao Postinho",
@@ -633,6 +634,9 @@ if st.sidebar.button("🔄 Carregar Dados da Aba", use_container_width=True, typ
         with st.spinner("Buscando pendentes no COM/LIC..."):
             df_pend = carregar_pendentes_comlic()
         descricao = "pendente(s) no COM/LIC"
+    elif aba_key == "__avulsos__":
+        df_pend = pd.DataFrame(columns=["OC", "DOTACAO", "FORNECEDOR", "HISTORICO", "VALOR", "DATA", "SUBELEMENTO", "FONTE", "APLICACAO"])
+        descricao = "planilha limpa de Empenhos Avulsos iniciada"
     else:
         with st.spinner(f"Carregando {fonte_sel}..."):
             try:
@@ -643,7 +647,7 @@ if st.sidebar.button("🔄 Carregar Dados da Aba", use_container_width=True, typ
                 df_pend = pd.DataFrame()
                 descricao = ""
                 
-    if df_pend.empty:
+    if df_pend.empty and aba_key != "__avulsos__":
         st.sidebar.info(f"ℹ️ Nenhum registro encontrado em '{fonte_sel}'.")
     else:
         st.session_state["df_para_empenhar"] = df_pend
@@ -689,7 +693,74 @@ st.markdown('<div class="section-header">🤖 Seção 3 — Selecionar e Empenha
 
 df_base = st.session_state.get("df_para_empenhar", pd.DataFrame())
 
-if df_base.empty:
+if st.session_state.get("fonte_dados") == "Empenhos Avulsos":
+    with st.expander("➕ **Adicionar Novo Empenho Avulso**", expanded=True):
+        st.markdown("Preencha os campos abaixo. Ao selecionar a **Dotação**, os campos de **Fonte**, **Código Aplicação** e a lista de **Subelementos** serão ajustados automaticamente.")
+        
+        col_dot = df_dotacao.columns[0]
+        col_elem_dot = df_dotacao.columns[3]
+        col_fonte_dot = df_dotacao.columns[8]
+        col_aplic_dot = df_dotacao.columns[10]
+        
+        col_elem_sub = df_keywords.columns[0]
+        col_nome_sub = df_keywords.columns[2]
+        
+        lista_dotacoes = df_dotacao[col_dot].dropna().unique().tolist()
+        
+        dotacao_sel = st.selectbox("Dotação", [""] + [str(d) for d in lista_dotacoes], key="avulso_dot")
+        
+        fonte_sug = ""
+        aplic_sug = ""
+        lista_subelementos = []
+        
+        if dotacao_sel:
+            row_dot = df_dotacao[df_dotacao[col_dot].astype(str) == dotacao_sel]
+            if not row_dot.empty:
+                fonte_sug = str(row_dot.iloc[0][col_fonte_dot]).strip()
+                aplic_sug = str(row_dot.iloc[0][col_aplic_dot]).strip()
+                elemento_str = str(row_dot.iloc[0][col_elem_dot]).strip()
+                if elemento_str:
+                     sub_filtrados = df_keywords[df_keywords[col_elem_sub].astype(str).str.strip() == elemento_str]
+                     if not sub_filtrados.empty:
+                         lista_subelementos = sub_filtrados[col_nome_sub].dropna().unique().tolist()
+        
+        subelemento_sel = st.selectbox("Subelemento", [""] + [str(s) for s in lista_subelementos], key="avulso_sub")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            fornecedor_txt = st.text_input("Fornecedor / Credor", key="avulso_forn")
+            valor_txt = st.text_input("Valor", key="avulso_val")
+        with col2:
+            historico_txt = st.text_input("Histórico", key="avulso_hist")
+            data_txt = st.text_input("Data do Empenho", key="avulso_data", help="Ex: 01/01/2026")
+            
+        st.info(f"💡 **Automático (Conforme Dotação):** Fonte: `{fonte_sug}` | Cód. Aplicação: `{aplic_sug}`")
+            
+        if st.button("➕ Adicionar à Tabela", use_container_width=True, type="secondary"):
+            if dotacao_sel and fornecedor_txt and valor_txt:
+                nova_linha = {
+                    "OC": "",
+                    "DOTACAO": dotacao_sel,
+                    "FORNECEDOR": fornecedor_txt,
+                    "HISTORICO": historico_txt,
+                    "VALOR": valor_txt,
+                    "DATA": data_txt,
+                    "SUBELEMENTO": subelemento_sel,
+                    "FONTE": fonte_sug,
+                    "APLICACAO": aplic_sug,
+                    "STATUS": "", "MENSAGEM": "", "EMPENHO_EXISTENTE": "", "DATA_PROCESSAMENTO": ""
+                }
+                df_atual = st.session_state.get("df_para_empenhar", pd.DataFrame())
+                df_atual = pd.concat([df_atual, pd.DataFrame([nova_linha])], ignore_index=True)
+                st.session_state["df_para_empenhar"] = df_atual
+                st.success("Adicionado com sucesso!")
+                st.rerun()
+            else:
+                st.error("Preencha no mínimo: Dotação, Fornecedor e Valor.")
+                
+    st.divider()
+
+if df_base.empty and st.session_state.get("fonte_dados") != "Empenhos Avulsos":
     st.info("ℹ️ Carregue o PDF (Seção 1) ou os pendentes (Seção 2) para ver os pedidos aqui.")
 else:
     # Adiciona coluna de seleção se não tiver
