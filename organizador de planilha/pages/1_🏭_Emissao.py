@@ -715,11 +715,18 @@ if st.session_state.get("fonte_dados") == "Empenhos Avulsos":
                 ficha = str(row[col_ficha_dot]).replace(".0", "").strip() if pd.notna(row[col_ficha_dot]) else ""
                 despesa = str(row[col_desp_dot]).strip() if pd.notna(row[col_desp_dot]) else ""
                 depto = str(row[col_depto_dot]).strip() if pd.notna(row[col_depto_dot]) else ""
-                dict_dotacoes[d] = f"{d} | Ficha: {ficha} | {despesa[:30]}... | {depto[:30]}..." if len(despesa)>30 else f"{d} | Ficha: {ficha} | {despesa} | {depto}"
+                # Guarda a dotação original como chave, mas exibe a Ficha primeiro
+                dict_dotacoes[d] = f"Ficha {ficha} | Dot: {d} | {despesa} | {depto}"
         
         lista_dotacoes = list(dict_dotacoes.keys())
         
-        dotacao_sel = st.selectbox("Dotação", [""] + lista_dotacoes, format_func=lambda x: dict_dotacoes.get(x, "") if x else "Selecione a dotação...", key="avulso_dot")
+        # O Streamlit selectbox já permite digitar para pesquisar nativamente em qualquer parte do texto gerado pelo format_func
+        dotacao_sel = st.selectbox(
+            "Pesquise e selecione a Dotação/Ficha", 
+            [""] + lista_dotacoes, 
+            format_func=lambda x: dict_dotacoes.get(x, "") if x else "Digite para pesquisar (Ex: Ficha, Saúde, Vencimentos...)", 
+            key="avulso_dot"
+        )
         
         fonte_sug = ""
         aplic_sug = ""
