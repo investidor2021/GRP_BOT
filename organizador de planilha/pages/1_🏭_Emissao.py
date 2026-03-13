@@ -708,25 +708,34 @@ if st.session_state.get("fonte_dados") == "Empenhos Avulsos":
         col_elem_sub = df_keywords.columns[0]
         col_nome_sub = df_keywords.columns[2]
         
-        dict_dotacoes = {}
+        dict_dotacoes_formatadas = {"": "Digite para pesquisar (Ex: Ficha, Saúde, Vencimentos...)"}
+        dict_reverso = {"Digite para pesquisar (Ex: Ficha, Saúde, Vencimentos...)": ""}
+        
         for _, row in df_dotacao.dropna(subset=[col_dot]).iterrows():
             d = str(row[col_dot]).strip()
-            if d and d != "nan" and d not in dict_dotacoes:
+            if d and d != "nan":
                 ficha = str(row[col_ficha_dot]).replace(".0", "").strip() if pd.notna(row[col_ficha_dot]) else ""
                 despesa = str(row[col_desp_dot]).strip() if pd.notna(row[col_desp_dot]) else ""
                 depto = str(row[col_depto_dot]).strip() if pd.notna(row[col_depto_dot]) else ""
-                # Guarda a dotação original como chave, mas exibe a Ficha primeiro
-                dict_dotacoes[d] = f"Ficha {ficha} | Dot: {d} | {despesa} | {depto}"
+                
+                texto_formatado = f"Ficha {ficha} | Dot: {d} | {despesa} | {depto}"
+                
+                if d not in dict_dotacoes_formatadas:
+                    dict_dotacoes_formatadas[d] = texto_formatado
+                    # Evita colisão de chaves caso textos coincidam (embora improvável com dotacao unica)
+                    dict_reverso[texto_formatado] = d
         
-        lista_dotacoes = list(dict_dotacoes.keys())
+        lista_opcoes_formatadas = list(dict_reverso.keys())
         
-        # O Streamlit selectbox já permite digitar para pesquisar nativamente em qualquer parte do texto gerado pelo format_func
-        dotacao_sel = st.selectbox(
+        # Passar o texto explícito no options permite que o componente do Streamlit pesquise o texto inteiro!
+        selecao_formatada = st.selectbox(
             "Pesquise e selecione a Dotação/Ficha", 
-            [""] + lista_dotacoes, 
-            format_func=lambda x: dict_dotacoes.get(x, "") if x else "Digite para pesquisar (Ex: Ficha, Saúde, Vencimentos...)", 
-            key="avulso_dot"
+            options=lista_opcoes_formatadas, 
+            key="avulso_dot_sel"
         )
+        
+        # Recupera o código da dotação real
+        dotacao_sel = dict_reverso.get(selecao_formatada, "")
         
         fonte_sug = ""
         aplic_sug = ""
