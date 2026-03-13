@@ -714,7 +714,7 @@ if st.session_state.get("fonte_dados") == "Empenhos Avulsos":
                 if not dotacao_val or dotacao_val == "nan":
                     continue
                 
-                label = f"Ficha: {ficha_val} - {dotacao_val} - {despesa_val} - {depto_val}"
+                label = f"Ficha: {ficha_val} - {dotacao_val} - {elemento_val} - {despesa_val} - {depto_val}"
                 
                 opcoes_dotacao.append({
                     "label": label,
@@ -791,7 +791,7 @@ if st.session_state.get("fonte_dados") == "Empenhos Avulsos":
             if dotacao_sel and fornecedor_txt and valor_txt:
                 nova_linha = {
                     "OC": "",
-                    "DOTACAO": dotacao_sel,
+                    "DOTACAO": item_sel["ficha"] if item_sel else "",
                     "FORNECEDOR": fornecedor_txt,
                     "HISTORICO": historico_txt,
                     "VALOR": valor_txt,
