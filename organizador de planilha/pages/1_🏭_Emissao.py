@@ -698,16 +698,28 @@ if st.session_state.get("fonte_dados") == "Empenhos Avulsos":
         st.markdown("Preencha os campos abaixo. Ao selecionar a **Dotação**, os campos de **Fonte**, **Código Aplicação** e a lista de **Subelementos** serão ajustados automaticamente.")
         
         col_dot = df_dotacao.columns[0]
+        col_depto_dot = df_dotacao.columns[1]
+        col_ficha_dot = df_dotacao.columns[2]
         col_elem_dot = df_dotacao.columns[3]
+        col_desp_dot = df_dotacao.columns[4]
         col_fonte_dot = df_dotacao.columns[8]
         col_aplic_dot = df_dotacao.columns[10]
         
         col_elem_sub = df_keywords.columns[0]
         col_nome_sub = df_keywords.columns[2]
         
-        lista_dotacoes = df_dotacao[col_dot].dropna().unique().tolist()
+        dict_dotacoes = {}
+        for _, row in df_dotacao.dropna(subset=[col_dot]).iterrows():
+            d = str(row[col_dot]).strip()
+            if d and d != "nan" and d not in dict_dotacoes:
+                ficha = str(row[col_ficha_dot]).replace(".0", "").strip() if pd.notna(row[col_ficha_dot]) else ""
+                despesa = str(row[col_desp_dot]).strip() if pd.notna(row[col_desp_dot]) else ""
+                depto = str(row[col_depto_dot]).strip() if pd.notna(row[col_depto_dot]) else ""
+                dict_dotacoes[d] = f"{d} | Ficha: {ficha} | {despesa[:30]}... | {depto[:30]}..." if len(despesa)>30 else f"{d} | Ficha: {ficha} | {despesa} | {depto}"
         
-        dotacao_sel = st.selectbox("Dotação", [""] + [str(d) for d in lista_dotacoes], key="avulso_dot")
+        lista_dotacoes = list(dict_dotacoes.keys())
+        
+        dotacao_sel = st.selectbox("Dotação", [""] + lista_dotacoes, format_func=lambda x: dict_dotacoes.get(x, "") if x else "Selecione a dotação...", key="avulso_dot")
         
         fonte_sug = ""
         aplic_sug = ""
