@@ -193,25 +193,29 @@ def abrir_novo_empenho(page, tentativas=3):
         except:
             pass  # ainda não abriu, segue o plano
 
-        # 1️⃣ esperar overlays desaparecerem
+        # 1️⃣ esperar overlays/loadpanels desaparecerem de forma segura
         try:
-            page.locator(".dx-overlay-content").wait_for(
-                state="detached",
-                timeout=5000
-            )
+            page.locator(".dx-loadpanel-content:visible, .dx-overlay-content:visible").first.wait_for(state="hidden", timeout=5000)
         except:
             pass
 
         # 2️⃣ agora sim, esperar o botão Novo aparecer
-        novo_btn = page.get_by_text("Novo", exact=True)
-        novo_btn.wait_for(state="visible", timeout=5000)
-
-        print("🖱️ Clicando no botão Novo...")
-        novo_btn.click()
+        print("🔍 Buscando botão Novo...")
+        # Usa seletor que garante ser visível e pega o primeiro (evita pegar tabs ocultas)
+        novo_btn = page.locator(".dx-button:has-text('Novo'):visible, .dx-button[aria-label='Novo']:visible").first
+        
+        try:
+            novo_btn.wait_for(state="visible", timeout=15000)
+            print("🖱️ Clicando no botão Novo...")
+            novo_btn.click(force=True)
+        except Exception as e:
+            print(f"⚠️ Erro ao procurar botão Novo: {e}")
+            page.wait_for_timeout(2000)
+            continue
 
         # 3️⃣ confirmar que a tela abriu
         try:
-            page.locator("text=Data:").wait_for(timeout=4000)
+            page.locator("text=Data:").wait_for(timeout=6000)
             print("✅ Tela de novo empenho aberta com sucesso")
             return
         except:
@@ -428,18 +432,21 @@ def fechar_empenho_e_voltar(page):
 
     # esperar a tela de empenho sumir
     try:
-        page.locator("text=Data:").wait_for(state="detached", timeout=5000)
+        page.locator("text=Data:").first.wait_for(state="hidden", timeout=5000)
     except:
         pass
 
     # esperar overlays sumirem
     try:
-        page.locator(".dx-overlay-content").wait_for(state="detached", timeout=5000)
+        page.locator(".dx-overlay-content:visible").first.wait_for(state="hidden", timeout=5000)
     except:
         pass
 
-    # garantir que o botão Novo voltou a ficar disponível
-    page.locator("text=Novo").wait_for(state="visible", timeout=10000)
+    # garantir que o botão Novo voltou a ficar disponível usando seletor estrito e seguro
+    try:
+        page.locator(".dx-button:has-text('Novo'):visible, .dx-button[aria-label='Novo']:visible").first.wait_for(state="visible", timeout=10000)
+    except:
+        pass
 
     print("✅ Tela fechada e sistema pronto para novo empenho")
 

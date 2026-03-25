@@ -452,7 +452,10 @@ def gravar_aba_empenhar(df_selecionados):
         "Valor": "VALOR",
         "Histórico": "HISTORICO",
         "Historico": "HISTORICO",
-        "Fonte": "FONTE"
+        "Fonte": "FONTE",
+        "APLICACAO": "COD_APLIC",
+        "Aplicacao": "COD_APLIC",
+        "Código de Aplicação": "COD_APLIC",
     }
     
     # Aplica o mapeamento apenas se a coluna alvo não existir (evita chocar colunas duplicadas)
@@ -615,7 +618,7 @@ st.sidebar.markdown('### 🔄 Fontes de Dados (Planilha)')
 
 FONTES = {
     "COM/LIC (Pendentes)": "__comlic__",
-    "Empenhos Avulsos":    "__avulsos__",
+    "Empenhos Avulsos":    "Avulsos",
     "Padrao Estudante":    "Padrao Estudante",
     "Padrao Frente":       "Padrao Frente",
     "Padrao Postinho":     "Padrao Postinho",
@@ -634,7 +637,7 @@ if st.sidebar.button("🔄 Carregar Dados da Aba", use_container_width=True, typ
         with st.spinner("Buscando pendentes no COM/LIC..."):
             df_pend = carregar_pendentes_comlic()
         descricao = "pendente(s) no COM/LIC"
-    elif aba_key == "__avulsos__":
+    elif aba_key == "Avulsos":
         df_pend = pd.DataFrame(columns=["OC", "DOTACAO", "FORNECEDOR", "HISTORICO", "VALOR", "DATA", "SUBELEMENTO", "FONTE", "APLICACAO"])
         descricao = "planilha limpa de Empenhos Avulsos iniciada"
     else:
@@ -647,7 +650,7 @@ if st.sidebar.button("🔄 Carregar Dados da Aba", use_container_width=True, typ
                 df_pend = pd.DataFrame()
                 descricao = ""
                 
-    if df_pend.empty and aba_key != "__avulsos__":
+    if df_pend.empty and aba_key != "Avulsos":
         st.sidebar.info(f"ℹ️ Nenhum registro encontrado em '{fonte_sel}'.")
     else:
         st.session_state["df_para_empenhar"] = df_pend
@@ -801,7 +804,7 @@ if st.session_state.get("fonte_dados") == "Empenhos Avulsos":
                 nova_linha = {
                     "OC": "",
                     "DOTACAO": item_sel["ficha"] if item_sel else "",
-                    "FORNECEDOR": fornecedor_txt,
+                    "FORNECEDOR": fornecedor_txt.zfill(3) if fornecedor_txt.isdigit() else fornecedor_txt,
                     "HISTORICO": historico_txt,
                     "VALOR": valor_txt,
                     "DATA": data_txt,

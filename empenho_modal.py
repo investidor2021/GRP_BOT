@@ -14,7 +14,10 @@ def preencher_empenho_dotacao(page, row, dry_run=False):
     page.keyboard.press("Tab")
 
     # fornecedor já vem depois
-    page.keyboard.type(str(normalizar_numero_excel(row["FORNECEDOR"])), delay=50)
+    fornecedor_str = str(normalizar_numero_excel(row["FORNECEDOR"]))
+    if fornecedor_str.isdigit():
+        fornecedor_str = fornecedor_str.zfill(3)
+    page.keyboard.type(fornecedor_str, delay=50)
     
     opcao = page.locator("div[role='option']").first
     opcao.wait_for(state="attached", timeout=5000)
