@@ -204,8 +204,19 @@ def carregar_planilhas_classificacao():
     spreadsheet = conectar_sheets()
     ws_dotacao    = spreadsheet.worksheet("dotacao")
     ws_subelemento = spreadsheet.worksheet("subelemento")
-    df_dotacao   = pd.DataFrame(ws_dotacao.get_all_records())
-    df_keywords  = pd.DataFrame(ws_subelemento.get_all_records())
+    
+    val_dotacao = ws_dotacao.get_all_values()
+    if val_dotacao:
+        df_dotacao = pd.DataFrame(val_dotacao[1:], columns=val_dotacao[0])
+    else:
+        df_dotacao = pd.DataFrame()
+        
+    val_sub = ws_subelemento.get_all_values()
+    if val_sub:
+        df_keywords = pd.DataFrame(val_sub[1:], columns=val_sub[0])
+    else:
+        df_keywords = pd.DataFrame()
+        
     df_keywords.columns = df_keywords.columns.str.strip().str.upper()
     df_dotacao.columns  = df_dotacao.columns.str.strip()
     return df_dotacao, df_keywords
