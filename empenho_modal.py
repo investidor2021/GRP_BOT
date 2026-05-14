@@ -12,6 +12,7 @@ def preencher_empenho_dotacao(page, row, dry_run=False):
     preencher_combo(page, "Fonte Recurso", normalizar_numero_excel(row["FONTE"]))
     preencher_combo(page, "Código de Aplicação", row["COD_APLIC"])
     page.keyboard.press("Tab")
+    page.keyboard.press("Tab") # Tab extra para pular o novo campo inserido no sistema
 
     # fornecedor já vem depois
     fornecedor_str = str(normalizar_numero_excel(row["FORNECEDOR"]))
