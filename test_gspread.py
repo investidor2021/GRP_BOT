@@ -10,7 +10,7 @@ http_client.HTTPConnection.debuglevel = 1
 logging.basicConfig()
 logging.getLogger().setLevel(logging.DEBUG)
 
-CREDENCIAIS_PATH = os.path.join("c:\\projetos GitHub\\grp_bot", "credenciais.json")
+CREDENCIAIS_PATH = os.path.join(os.path.dirname(__file__), "organizador de planilha", "credenciais.json")
 SPREADSHEET_KEY = "1EJN2eziO3rpv2KFavAMIJbD7UQyZZOChGLXt81VTHww"
 
 scope = [
