@@ -7,6 +7,12 @@ from campos import tratar_oc_ja_empenhada, normalizar_subelemento2, verificar_co
 def preencher_empenho_dotacao(page, row, dry_run=False):
     abrir_novo_empenho(page)
     
+    if row.get("TIPO"):
+        try:
+            preencher_combo(page, "Tipo", row["TIPO"])
+        except Exception as e:
+            print(f"⚠️ Erro ao preencher Tipo ({row['TIPO']}): {e}")
+            
     preencher_input(page, "Dotação", (normalizar_numero_excel(row["DOTACAO"])))
     selecionar_combo_habilitado(page, "Subelemento", normalizar_subelemento( row["SUBELEMENTO"]))
     preencher_combo(page, "Fonte Recurso", normalizar_numero_excel(row["FONTE"]))
