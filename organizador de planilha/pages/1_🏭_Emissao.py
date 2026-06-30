@@ -467,6 +467,10 @@ def gravar_aba_empenhar(df_selecionados):
         "APLICACAO": "COD_APLIC",
         "Aplicacao": "COD_APLIC",
         "Código de Aplicação": "COD_APLIC",
+        "Tipo": "TIPO",
+        "TIPO": "TIPO",
+        "Tipo de Empenho": "TIPO",
+        "Tipo Empenho": "TIPO",
     }
     
     # Aplica o mapeamento apenas se a coluna alvo não existir (evita chocar colunas duplicadas)
@@ -649,7 +653,7 @@ if st.sidebar.button("🔄 Carregar Dados da Aba", use_container_width=True, typ
             df_pend = carregar_pendentes_comlic()
         descricao = "pendente(s) no COM/LIC"
     elif aba_key == "Avulsos":
-        df_pend = pd.DataFrame(columns=["OC", "DOTACAO", "FORNECEDOR", "HISTORICO", "VALOR", "DATA", "SUBELEMENTO", "FONTE", "APLICACAO"])
+        df_pend = pd.DataFrame(columns=["OC", "DOTACAO", "FORNECEDOR", "HISTORICO", "VALOR", "DATA", "TIPO", "SUBELEMENTO", "FONTE", "APLICACAO"])
         descricao = "planilha limpa de Empenhos Avulsos iniciada"
     else:
         with st.spinner(f"Carregando {fonte_sel}..."):
@@ -807,6 +811,11 @@ if st.session_state.get("fonte_dados") == "Empenhos Avulsos":
         with col2:
             historico_txt = st.text_input("Histórico", key="avulso_hist")
             data_txt = st.text_input("Data do Empenho", key="avulso_data", help="Ex: 01/01/2026")
+            tipo_txt = st.selectbox(
+                "Tipo de Empenho",
+                options=["Ordinário", "Estimativo", "Global"],
+                key="avulso_tipo"
+            )
             
         st.info(f"💡 **Automático (Conforme Dotação):** Fonte: `{fonte_sug}` | Cód. Aplicação: `{aplic_sug}`")
             
@@ -819,6 +828,7 @@ if st.session_state.get("fonte_dados") == "Empenhos Avulsos":
                     "HISTORICO": historico_txt,
                     "VALOR": valor_txt,
                     "DATA": data_txt,
+                    "TIPO": tipo_txt,
                     "SUBELEMENTO": str(item_sub_sel["cod"]).replace(".0", "").zfill(2) if item_sub_sel else "",
                     "FONTE": fonte_sug,
                     "APLICACAO": aplic_sug,
