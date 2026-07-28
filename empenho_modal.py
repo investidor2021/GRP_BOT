@@ -33,7 +33,8 @@ def preencher_empenho_dotacao(page, row, dry_run=False):
     page.keyboard.press("Enter")
 
    
-    preencher_data_se_existir(page, row.get("DATA"))
+    data_valor = row.get("DATA") or row.get("Data") or row.get("data")
+    preencher_data_se_existir(page, data_valor)
     preencher_valor_dotacao(page, normalizar_valor_excel(row["VALOR"]))
     preencher_textarea(page, "Histórico", row["HISTORICO"])
 
@@ -72,7 +73,8 @@ def preencher_empenho_oc(page, row, registro):
     #preencher_combo(page, "Fonte Recurso", row["FONTE"])
     #preencher_combo(page, "Código de Aplicação", row["COD_APLIC"])
     #page.keyboard.press("Tab")
-    preencher_data_se_existir(page, row.get("DATA"))
+    data_valor = row.get("DATA") or row.get("Data") or row.get("data")
+    preencher_data_se_existir(page, data_valor)
     #preencher_numero(page, "Valor", (normalizar_valor_excel(row["VALOR"])))
 
     numero_empenho = finalizar_empenho(page)

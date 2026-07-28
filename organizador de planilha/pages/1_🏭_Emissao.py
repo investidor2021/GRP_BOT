@@ -484,10 +484,15 @@ def gravar_aba_empenhar(df_selecionados):
         "Tipo Empenho": "TIPO",
     }
     
-    # Aplica o mapeamento apenas se a coluna alvo não existir (evita chocar colunas duplicadas)
+    # Aplica o mapeamento transferindo valores caso a coluna de destino já exista vazia
     for col_origem, col_destino in mapeamentos.items():
-        if col_origem in df_out.columns and col_destino not in df_out.columns:
-            df_out.rename(columns={col_origem: col_destino}, inplace=True)
+        if col_origem in df_out.columns:
+            if col_destino not in df_out.columns:
+                df_out.rename(columns={col_origem: col_destino}, inplace=True)
+            elif col_origem != col_destino:
+                mask_vazia = df_out[col_destino].astype(str).str.strip().isin(["", "nan", "None", "<NA>"])
+                df_out.loc[mask_vazia, col_destino] = df_out.loc[mask_vazia, col_origem]
+                df_out.drop(columns=[col_origem], inplace=True)
         
     # Garante que DOTACAO e OC existam para a logica de seleção exclusiva
     if "DOTACAO" not in df_out.columns:
