@@ -298,6 +298,7 @@ def normalizar_valor_excel(valor):
         return valor_str  # devolve como veio se não conseguir parsear
 
 import pandas as pd
+import re
 
 def normalizar_data_excel(valor):
     if valor is None:
@@ -311,7 +312,25 @@ def normalizar_data_excel(valor):
     try:
         return valor.strftime("%d/%m/%Y")
     except Exception:
-        return str(valor).strip()
+        pass
+
+    valor_str = str(valor).strip()
+    if not valor_str or valor_str.lower() in ("nan", "none", ""):
+        return None
+
+    # Se vier no formato AAAA-MM-DD
+    match_iso = re.match(r"^(\d{4})[-/](\d{2})[-/](\d{2})$", valor_str)
+    if match_iso:
+        ano, mes, dia = match_iso.groups()
+        return f"{dia}/{mes}/{ano}"
+
+    # Se vier no formato DD-MM-AAAA
+    match_br_hifa = re.match(r"^(\d{2})[-](\d{2})[-](\d{4})$", valor_str)
+    if match_br_hifa:
+        dia, mes, ano = match_br_hifa.groups()
+        return f"{dia}/{mes}/{ano}"
+
+    return valor_str
 
 def preencher_data_se_existir(page, valor_data):
     data = normalizar_data_excel(valor_data)
@@ -323,17 +342,26 @@ def preencher_data_se_existir(page, valor_data):
         page.wait_for_timeout(200)
         return
 
+    print(f"📅 Preenchendo Data do Empenho: {data}")
     campo = (
         page.locator("label:has-text('Data:')")
         .locator("xpath=following-sibling::div")
-        .locator("input.dx-texteditor-input[role='combobox']:visible")
+        .locator("input.dx-texteditor-input[role='combobox']:visible, input.dx-texteditor-input:visible")
         .first
     )
 
-    campo.click(force=True)
-    campo.press("Control+A")
-    campo.type(data, delay=50)
-    campo.press("Tab")
+    try:
+        campo.wait_for(state="attached", timeout=5000)
+        campo.click(force=True)
+        page.wait_for_timeout(100)
+        page.keyboard.press("Control+A")
+        page.keyboard.press("Backspace")
+        page.keyboard.type(str(data), delay=50)
+        page.wait_for_timeout(200)
+        page.keyboard.press("Tab")
+        page.wait_for_timeout(200)
+    except Exception as e:
+        print(f"⚠️ Erro ao preencher data ({data}): {e}")
 
 def verificar_oc_sem_saldo_e_abortar(page):
     popup = page.locator(

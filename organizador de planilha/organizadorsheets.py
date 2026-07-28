@@ -228,7 +228,7 @@ def carregar_pendentes_comlic():
     ws = spreadsheet.worksheet(ABA_COMLIC)
 
     expected_headers = [
-        "Pedido", "Fornecedor", "Descrição", "Dotação",
+        "Pedido", "Data", "Fornecedor", "Descrição", "Dotação",
         "Elemento", "Subelemento", "Descrição Subelemento",
         "Confiabilidade", "STATUS", "MENSAGEM",
         "EMPENHO_EXISTENTE", "DATA_PROCESSAMENTO"
@@ -297,7 +297,7 @@ def gravar_comlic(df_novos):
     ws = spreadsheet.worksheet(ABA_COMLIC)
 
     expected_headers = [
-        "Pedido", "Fornecedor", "Descrição", "Dotação",
+        "Pedido", "Data", "Fornecedor", "Descrição", "Dotação",
         "Elemento", "Subelemento", "Descrição Subelemento",
         "Confiabilidade", "STATUS", "MENSAGEM",
         "EMPENHO_EXISTENTE", "DATA_PROCESSAMENTO"
@@ -341,7 +341,7 @@ def atualizar_subelementos_vazios(df_dotacao, df_keywords):
     ws = spreadsheet.worksheet(ABA_COMLIC)
     
     expected_headers = [
-        "Pedido", "Fornecedor", "Descrição", "Dotação",
+        "Pedido", "Data", "Fornecedor", "Descrição", "Dotação",
         "Elemento", "Subelemento", "Descrição Subelemento",
         "Confiabilidade", "STATUS", "MENSAGEM",
         "EMPENHO_EXISTENTE", "DATA_PROCESSAMENTO"
@@ -525,6 +525,7 @@ def extrair_dados_pdf(uploaded_file, df_dotacao, df_keywords):
             continue
 
         pedido_match     = re.search(r"PEDIDO:\s*(\d+)", bloco)
+        data_match       = re.search(r"DATA:\s*([\d\/-]+)", bloco)
         fornecedor_match = re.search(r"FORNECEDOR:\s*(.+?)\s*/", bloco)
         dotacao_match    = re.search(r"DOTAÇÃO:\s*\((\d+)\)([0-9\.]+)", bloco)
         descricao_match  = re.search(
@@ -532,6 +533,7 @@ def extrair_dados_pdf(uploaded_file, df_dotacao, df_keywords):
         )
 
         pedido       = pedido_match.group(1).strip() if pedido_match else ""
+        data_str     = data_match.group(1).strip().replace("-", "/") if data_match else ""
         fornecedor   = fornecedor_match.group(1).strip() if fornecedor_match else ""
         dotacao_num  = dotacao_match.group(1).strip() if dotacao_match else ""
         dotacao_comp = dotacao_match.group(2).strip() if dotacao_match else ""
@@ -557,6 +559,8 @@ def extrair_dados_pdf(uploaded_file, df_dotacao, df_keywords):
             dados.append({
                 "Pedido": pedido,
                 "OC": pedido,          # campo B da aba Empenhar = OC
+                "Data": data_str,
+                "DATA": data_str,
                 "Fornecedor": fornecedor,
                 "Descrição": descricao,
                 "Dotação": dotacao_num,
@@ -670,7 +674,7 @@ if uploaded_file:
 
         if not df_novos.empty:
             st.caption("Novos pedidos extraídos:")
-            colunas_viz = ["Pedido", "Fornecedor", "Descrição", "Dotação", "Elemento", "Subelemento", "Descrição Subelemento", "Confiabilidade"]
+            colunas_viz = ["Pedido", "Data", "Fornecedor", "Descrição", "Dotação", "Elemento", "Subelemento", "Descrição Subelemento", "Confiabilidade"]
             st.dataframe(df_novos[[c for c in colunas_viz if c in df_novos.columns]], use_container_width=True)
 
     if st.toggle("🔍 Ver texto bruto do PDF"):
