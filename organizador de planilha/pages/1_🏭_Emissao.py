@@ -228,20 +228,25 @@ def carregar_pendentes_comlic():
     spreadsheet = conectar_sheets()
     ws = spreadsheet.worksheet(ABA_COMLIC)
 
-    expected_headers = [
-        "Pedido", "Data", "Fornecedor", "Descrição", "Dotação",
-        "Elemento", "Subelemento", "Descrição Subelemento",
-        "Confiabilidade", "STATUS", "MENSAGEM",
-        "EMPENHO_EXISTENTE", "DATA_PROCESSAMENTO"
-    ]
+    try:
+        records = ws.get_all_records()
+    except Exception:
+        valores = ws.get_all_values()
+        if valores and len(valores) > 1:
+            records = [dict(zip(valores[0], row)) for row in valores[1:]]
+        else:
+            records = []
 
-    records = ws.get_all_records(expected_headers=expected_headers)
     df = pd.DataFrame(records)
     if df.empty:
         return df
 
+    if "Data" not in df.columns:
+        df["Data"] = ""
+
     # Remove linhas completamente vazias (linhas em branco da planilha)
-    df = df[df["Pedido"].astype(str).str.strip().replace("nan", "") != ""]
+    if "Pedido" in df.columns:
+        df = df[df["Pedido"].astype(str).str.strip().replace("nan", "") != ""]
 
     # A PEDIDO: Removido o filtro de STATUS ("Pendente"). 
     # Agora a única regra que esconde o pedido é se ele já foi empenhado.
@@ -304,7 +309,11 @@ def gravar_comlic(df_novos):
         "EMPENHO_EXISTENTE", "DATA_PROCESSAMENTO"
     ]
 
-    existentes = ws.get_all_records(expected_headers=expected_headers)
+    try:
+        existentes = ws.get_all_records()
+    except Exception:
+        existentes = []
+
     if existentes:
         df_exist = pd.DataFrame(existentes)
         # Ignora linhas em branco ao comparar
@@ -329,7 +338,9 @@ def gravar_comlic(df_novos):
 
     # Garante cabeçalho na planilha
     valores_atuais = ws.get_all_values()
-    if not valores_atuais or valores_atuais[0] != expected_headers:
+    if not valores_atuais or len(valores_atuais) == 0:
+        ws.update("A1", [expected_headers])
+    elif valores_atuais[0] != expected_headers:
         ws.update("A1", [expected_headers])
 
     ws.append_rows(df_para_gravar.values.tolist(), value_input_option="USER_ENTERED")
