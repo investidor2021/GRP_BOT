@@ -224,37 +224,31 @@ def preencher_anulacao_empenho(page, row):
         print(f"⚠️ Erro ao preencher Histórico: {ex_h}")
 
     # 7. Selecionar Aba e Preencher Valor
-    is_processado = "processado" in tipo_resto and "não" not in tipo_resto and "nao" not in tipo_resto
+    tipo_resto_lower = str(tipo_resto).lower()
+    # Se contiver 'liq', 'processad', 'rp processado', 'restos processados' -> Liquidações
+    is_processado = any(k in tipo_resto_lower for k in ["liquida", "processad"]) and ("não" not in tipo_resto_lower and "nao" not in tipo_resto_lower)
 
+    print(f"📂 Alternando aba da anulação (TipoResto='{tipo_resto}' -> Processado={is_processado})...")
     if is_processado:
-        print("📂 Alternando para a aba 'Liquidações' (Restos Processados)...")
-        aba_liq = page.locator(".tab-header:has-text('Liquidações'), span:has-text('Liquidações'), div:has-text('Liquidações')").first
-        try:
-            aba_liq.wait_for(state="visible", timeout=10000)
-            aba_liq.click(force=True)
-            page.wait_for_timeout(600)
-        except Exception as ex_tab:
-            print(f"⚠️ Erro ao clicar na aba Liquidações: {ex_tab}")
+        aba = page.locator("span:has-text('Liquidações'), div.tab-header:has-text('Liquidações'), div:has-text('Liquidações')").first
     else:
-        print("📂 Alternando para a aba 'Documento de Despesa' (Anulação Normal / Não Processados)...")
-        aba_doc = page.locator(".tab-header:has-text('Documento de Despesa'), span:has-text('Documento de Despesa'), div:has-text('Documento de Despesa')").first
-        try:
-            aba_doc.wait_for(state="visible", timeout=10000)
-            aba_doc.click(force=True)
-            page.wait_for_timeout(600)
-        except Exception as ex_tab:
-            print(f"⚠️ Erro ao clicar na aba Documento de Despesa: {ex_tab}")
+        aba = page.locator("span:has-text('Documento de Despesa'), div.tab-header:has-text('Documento de Despesa'), div:has-text('Documento de Despesa')").first
 
-    print(f"💰 Preenchendo o Valor na coluna 'Anular': {valor_val}")
     try:
-        campo_val = page.locator("td[aria-colindex='6'] input:visible, td.dx-cell-focus-disabled input:visible").first
-        if not campo_val.is_visible():
-            spinbuttons = page.locator("input[role='spinbutton']:visible, input.dx-texteditor-input[inputmode='decimal']:visible")
-            if spinbuttons.count() > 1:
-                campo_val = spinbuttons.last
-            else:
-                campo_val = spinbuttons.first
+        if aba.is_visible(timeout=5000):
+            aba.click(force=True)
+            page.wait_for_timeout(800)
+        else:
+            page.get_by_text("Liquidações" if is_processado else "Documento de Despesa").first.click(force=True)
+            page.wait_for_timeout(800)
+    except Exception as ex_tab:
+        print(f"⚠️ Aviso ao alternar aba: {ex_tab}")
 
+    print(f"💰 Preenchendo o Valor na tabela da aba: {valor_val}")
+    # NUNCA utilizar o campo do Empenho! O valor da anulação fica OBRIGATORIAMENTE em uma célula da tabela (td ou dx-data-grid)
+    campo_val = page.locator("dx-data-grid input:visible, td[aria-colindex='6'] input:visible, td input.dx-texteditor-input:visible, td input[role='spinbutton']:visible").first
+
+    try:
         campo_val.wait_for(state="visible", timeout=10000)
         campo_val.click(force=True)
         page.wait_for_timeout(200)
@@ -264,8 +258,9 @@ def preencher_anulacao_empenho(page, row):
         page.wait_for_timeout(300)
         campo_val.press("Tab")
         page.wait_for_timeout(500)
+        print(f"✅ Valor {valor_val} preenchido na tabela.")
     except Exception as ex_val:
-        print(f"⚠️ Erro ao preencher Valor ({valor_val}): {ex_val}")
+        print(f"❌ Não foi possível preencher o valor na tabela: {ex_val}")
 
     # 8. Salvar e Fechar
     print("💾 Clicando em Salvar/Fechar anulação...")
