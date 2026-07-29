@@ -228,28 +228,44 @@ def preencher_anulacao_empenho(page, row):
 
     if is_processado:
         print("📂 Alternando para a aba 'Liquidações' (Restos Processados)...")
-        aba_liq = page.locator("span:has-text('Liquidações'), div:has-text('Liquidações')").first
-        if aba_liq.is_visible():
+        aba_liq = page.locator(".tab-header:has-text('Liquidações'), span:has-text('Liquidações'), div:has-text('Liquidações')").first
+        try:
+            aba_liq.wait_for(state="visible", timeout=10000)
             aba_liq.click(force=True)
-            page.wait_for_timeout(500)
-
-        campo_val = page.locator("dx-number-box input:visible, input[role='spinbutton']:visible").first
-        campo_val.wait_for(state="visible", timeout=5000)
-        campo_val.click(force=True)
-        campo_val.fill(str(valor_val))
-        page.keyboard.press("Tab")
+            page.wait_for_timeout(600)
+        except Exception as ex_tab:
+            print(f"⚠️ Erro ao clicar na aba Liquidações: {ex_tab}")
     else:
         print("📂 Alternando para a aba 'Documento de Despesa' (Anulação Normal / Não Processados)...")
-        aba_doc = page.locator("span:has-text('Documento de Despesa'), div:has-text('Documento de Despesa')").first
-        if aba_doc.is_visible():
+        aba_doc = page.locator(".tab-header:has-text('Documento de Despesa'), span:has-text('Documento de Despesa'), div:has-text('Documento de Despesa')").first
+        try:
+            aba_doc.wait_for(state="visible", timeout=10000)
             aba_doc.click(force=True)
-            page.wait_for_timeout(500)
+            page.wait_for_timeout(600)
+        except Exception as ex_tab:
+            print(f"⚠️ Erro ao clicar na aba Documento de Despesa: {ex_tab}")
 
-        campo_val = page.locator("dx-number-box input:visible, input[role='spinbutton']:visible").first
-        campo_val.wait_for(state="visible", timeout=5000)
+    print(f"💰 Preenchendo o Valor na coluna 'Anular': {valor_val}")
+    try:
+        campo_val = page.locator("td[aria-colindex='6'] input:visible, td.dx-cell-focus-disabled input:visible").first
+        if not campo_val.is_visible():
+            spinbuttons = page.locator("input[role='spinbutton']:visible, input.dx-texteditor-input[inputmode='decimal']:visible")
+            if spinbuttons.count() > 1:
+                campo_val = spinbuttons.last
+            else:
+                campo_val = spinbuttons.first
+
+        campo_val.wait_for(state="visible", timeout=10000)
         campo_val.click(force=True)
+        page.wait_for_timeout(200)
+        page.keyboard.press("Control+A")
+        page.keyboard.press("Backspace")
         campo_val.fill(str(valor_val))
-        page.keyboard.press("Tab")
+        page.wait_for_timeout(300)
+        campo_val.press("Tab")
+        page.wait_for_timeout(500)
+    except Exception as ex_val:
+        print(f"⚠️ Erro ao preencher Valor ({valor_val}): {ex_val}")
 
     # 8. Salvar e Fechar
     print("💾 Clicando em Salvar/Fechar anulação...")
