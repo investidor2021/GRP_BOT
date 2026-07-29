@@ -111,35 +111,49 @@ def preencher_anulacao_empenho(page, row):
     # 2. Campo 1: Exercício (Ano) -> exercicio-contabil-seletor
     print(f"📅 Selecionando Exercício ({ano}) no campo exercicio-contabil-seletor...")
     try:
-        combo_ex = page.locator("exercicio-contabil-seletor input.dx-texteditor-input:visible, exercicio-contabil-seletor input[role='combobox']:visible").first
-        if not combo_ex.is_visible():
-            combo_ex = page.locator("label:has-text('Exercicio') + div input:visible, label:has-text('Exercício') + div input:visible").first
-
+        combo_ex = page.locator("exercicio-contabil-seletor .dx-selectbox, exercicio-contabil-seletor input:visible").first
         combo_ex.wait_for(state="visible", timeout=10000)
         combo_ex.click(force=True)
-        page.wait_for_timeout(200)
-        page.keyboard.press("Control+A")
-        page.keyboard.press("Backspace")
-        combo_ex.fill(str(ano))
         page.wait_for_timeout(300)
 
-        opcao_ano = page.get_by_role("option").filter(has_text=str(ano))
-        if opcao_ano.count() > 0:
-            opcao_ano.first.click(force=True)
-        else:
-            page.keyboard.press("Enter")
-            
-        page.keyboard.press("Escape") # Fecha o dropdown se continuar aberto
-        page.keyboard.press("Tab")
-        page.wait_for_timeout(1000)
+        # 🧠 O DevExpress abre a lista de opções. Buscamos o item do ano exato na lista aberta!
+        opcao_item = (
+            page.locator(".dx-overlay-content:visible .dx-item, .dx-list-item:visible, .dx-item-content:visible")
+            .filter(has_text=str(ano))
+            .first
+        )
 
+        try:
+            if opcao_item.is_visible(timeout=3000):
+                print(f"🖱️ Clicando na opção {ano} na lista do DevExpress...")
+                opcao_item.click(force=True)
+            else:
+                print(f"⌨️ Digitando {ano} via teclado e pressionando Enter...")
+                page.keyboard.type(str(ano))
+                page.wait_for_timeout(300)
+                page.keyboard.press("Enter")
+        except Exception:
+            print(f"⌨️ Fallback: Digitando {ano} via teclado...")
+            page.keyboard.type(str(ano))
+            page.wait_for_timeout(300)
+            page.keyboard.press("Enter")
+
+        page.wait_for_timeout(500)
+        # Garante fechamento do dropdown se continuar aberto
+        try:
+            if page.locator(".dx-overlay-content:visible .dx-item").count() > 0:
+                page.keyboard.press("Escape")
+        except Exception:
+            pass
+
+        page.wait_for_timeout(500)
         # Espera qualquer re-carregamento do Angular após a mudança de ano
         try:
             page.locator(".dx-loadpanel-content:visible").first.wait_for(state="hidden", timeout=5000)
         except Exception:
             pass
 
-        print(f"✅ Exercício {ano} preenchido.")
+        print(f"✅ Exercício {ano} selecionado com sucesso.")
     except Exception as e:
         print(f"⚠️ Erro/Aviso ao preencher Exercício no modal: {e}")
 
