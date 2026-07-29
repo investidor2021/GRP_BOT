@@ -108,15 +108,12 @@ def preencher_anulacao_empenho(page, row):
     # 1. Abrir nova anulação (clica no botão Novo)
     abrir_nova_anulacao(page)
 
-    # Contêiner do modal
-    modal = page.locator("div.dx-popup-content:visible").last
-
     # 2. Campo 1: Exercício (Ano) -> exercicio-contabil-seletor
     print(f"📅 Selecionando Exercício ({ano}) no campo exercicio-contabil-seletor...")
     try:
-        combo_ex = modal.locator("exercicio-contabil-seletor input.dx-texteditor-input:visible, label:has-text('Exercicio') + div input:visible, label:has-text('Exercício') + div input:visible").first
+        combo_ex = page.locator("exercicio-contabil-seletor input.dx-texteditor-input:visible, exercicio-contabil-seletor input[role='combobox']:visible").first
         if not combo_ex.is_visible():
-            combo_ex = page.locator("exercicio-contabil-seletor input.dx-texteditor-input:visible").first
+            combo_ex = page.locator("label:has-text('Exercicio') + div input:visible, label:has-text('Exercício') + div input:visible").first
 
         combo_ex.wait_for(state="visible", timeout=10000)
         combo_ex.click(force=True)
@@ -132,16 +129,29 @@ def preencher_anulacao_empenho(page, row):
         else:
             page.keyboard.press("Enter")
             
+        page.keyboard.press("Escape") # Fecha o dropdown se continuar aberto
         page.keyboard.press("Tab")
-        page.wait_for_timeout(400)
+        page.wait_for_timeout(1000)
+
+        # Espera qualquer re-carregamento do Angular após a mudança de ano
+        try:
+            page.locator(".dx-loadpanel-content:visible").first.wait_for(state="hidden", timeout=5000)
+        except Exception:
+            pass
+
         print(f"✅ Exercício {ano} preenchido.")
     except Exception as e:
         print(f"⚠️ Erro/Aviso ao preencher Exercício no modal: {e}")
 
     # 3. Campo 2: Empenho (Número) -> dx-number-box
     print(f"🔢 Digitando número do Empenho: {empenho_num}")
-    campo_num = modal.locator("dx-number-box input:visible, label:has-text('Empenho') + div input:visible, input[role='spinbutton']:visible").first
-    campo_num.wait_for(state="visible", timeout=10000)
+    campo_num = page.locator("dx-number-box input:visible, label:has-text('Empenho') + div input:visible").first
+    try:
+        campo_num.wait_for(state="visible", timeout=15000)
+    except Exception:
+        campo_num = page.locator("input[role='spinbutton']:visible").first
+        campo_num.wait_for(state="visible", timeout=15000)
+
     campo_num.click(force=True)
     campo_num.fill(str(empenho_num))
     page.wait_for_timeout(300)
@@ -174,7 +184,7 @@ def preencher_anulacao_empenho(page, row):
         if data_norm:
             print(f"📅 Preenchendo Data: {data_norm}")
             try:
-                campo_data = modal.locator("dx-date-box input:visible, label:has-text('Data:') + div input:visible").first
+                campo_data = page.locator("dx-date-box input:visible, label:has-text('Data:') + div input:visible").first
                 campo_data.wait_for(state="visible", timeout=5000)
                 campo_data.click(force=True)
                 page.wait_for_timeout(100)
@@ -191,7 +201,7 @@ def preencher_anulacao_empenho(page, row):
     # 6. Campo 4: Histórico -> dx-text-area
     print(f"📝 Preenchendo Histórico: {historico_val[:30]}...")
     try:
-        campo_hist = modal.locator("dx-text-area textarea:visible, label:has-text('Histórico') + div textarea:visible").first
+        campo_hist = page.locator("dx-text-area textarea:visible, label:has-text('Histórico') + div textarea:visible").first
         campo_hist.wait_for(state="visible", timeout=5000)
         campo_hist.click(force=True)
         campo_hist.fill(str(historico_val))
@@ -204,24 +214,24 @@ def preencher_anulacao_empenho(page, row):
 
     if is_processado:
         print("📂 Alternando para a aba 'Liquidações' (Restos Processados)...")
-        aba_liq = modal.locator("span:has-text('Liquidações'), div:has-text('Liquidações')").first
+        aba_liq = page.locator("span:has-text('Liquidações'), div:has-text('Liquidações')").first
         if aba_liq.is_visible():
             aba_liq.click(force=True)
             page.wait_for_timeout(500)
 
-        campo_val = modal.locator("dx-number-box input:visible, input[role='spinbutton']:visible").first
+        campo_val = page.locator("dx-number-box input:visible, input[role='spinbutton']:visible").first
         campo_val.wait_for(state="visible", timeout=5000)
         campo_val.click(force=True)
         campo_val.fill(str(valor_val))
         page.keyboard.press("Tab")
     else:
         print("📂 Alternando para a aba 'Documento de Despesa' (Anulação Normal / Não Processados)...")
-        aba_doc = modal.locator("span:has-text('Documento de Despesa'), div:has-text('Documento de Despesa')").first
+        aba_doc = page.locator("span:has-text('Documento de Despesa'), div:has-text('Documento de Despesa')").first
         if aba_doc.is_visible():
             aba_doc.click(force=True)
             page.wait_for_timeout(500)
 
-        campo_val = modal.locator("dx-number-box input:visible, input[role='spinbutton']:visible").first
+        campo_val = page.locator("dx-number-box input:visible, input[role='spinbutton']:visible").first
         campo_val.wait_for(state="visible", timeout=5000)
         campo_val.click(force=True)
         campo_val.fill(str(valor_val))
@@ -229,7 +239,7 @@ def preencher_anulacao_empenho(page, row):
 
     # 8. Salvar e Fechar
     print("💾 Clicando em Salvar/Fechar anulação...")
-    btn_salvar = modal.locator("span.dx-button-text:has-text('Salvar/Fechar'), .dx-button:has-text('Salvar/Fechar')").first
+    btn_salvar = page.locator("span.dx-button-text:has-text('Salvar/Fechar'), .dx-button:has-text('Salvar/Fechar')").first
     btn_salvar.wait_for(state="visible", timeout=10000)
     btn_salvar.click(force=True)
     page.wait_for_timeout(1000)
