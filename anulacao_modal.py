@@ -154,41 +154,38 @@ def preencher_anulacao_empenho(page, row):
     # 1. Abrir nova anulação (ajustando o Ano no filtro da página principal ANTES do clique em Novo)
     abrir_nova_anulacao(page, ano_alvo=ano)
 
-    # 2. Campo 1: Selecionar Ano DENTRO do modal (primeiro combobox visível do formulário)
-    print(f"📅 Selecionando o Ano ({ano}) dentro do formulário de anulação...")
-    try:
-        combo_ano_modal = (
-            page.locator(".dx-popup-content:visible input[role='combobox']:visible, .dx-overlay-content:visible input[role='combobox']:visible, input[role='combobox']:visible")
-            .first
-        )
-        combo_ano_modal.wait_for(state="visible", timeout=10000)
-        combo_ano_modal.click(force=True)
-        page.wait_for_timeout(200)
-        page.keyboard.press("Control+A")
-        page.keyboard.press("Backspace")
-        combo_ano_modal.fill(str(ano))
-        page.wait_for_timeout(300)
+    # Contêiner estrito do modal visível
+    modal = page.locator("div.dx-popup-content:visible").last
 
-        opcao_ano = page.get_by_role("option").filter(has_text=str(ano))
-        if opcao_ano.count() > 0:
-            opcao_ano.first.click(force=True)
-        else:
-            page.keyboard.press("Enter")
-            
-        page.keyboard.press("Tab")
-        page.wait_for_timeout(500)
-        print(f"✅ Ano {ano} selecionado com sucesso no modal.")
+    # 2. Campo 1: Selecionar Ano DENTRO do modal (se houver combobox no modal)
+    try:
+        combo_ano_modal = modal.locator("input[role='combobox']:visible").first
+        if combo_ano_modal.is_visible():
+            print(f"📅 Selecionando Ano ({ano}) dentro da janela modal...")
+            combo_ano_modal.click(force=True)
+            page.wait_for_timeout(200)
+            page.keyboard.press("Control+A")
+            page.keyboard.press("Backspace")
+            combo_ano_modal.fill(str(ano))
+            page.wait_for_timeout(300)
+
+            opcao_ano = page.get_by_role("option").filter(has_text=str(ano))
+            if opcao_ano.count() > 0:
+                opcao_ano.first.click(force=True)
+            else:
+                page.keyboard.press("Enter")
+                
+            page.keyboard.press("Tab")
+            page.wait_for_timeout(400)
+            print(f"✅ Ano {ano} preenchido no modal.")
     except Exception as e:
         print(f"⚠️ Aviso ao preencher ano no modal da anulação: {e}")
 
-    # 3. Campo 2: Número do Empenho (spinbutton)
+    # 3. Campo 2: Número do Empenho (spinbutton dentro do modal)
     print(f"🔢 Digitando número do Empenho: {empenho_num}")
-    campo_num = page.locator("input[role='spinbutton']:visible").first
-    try:
-        campo_num.wait_for(state="visible", timeout=10000)
-    except Exception:
-        campo_num = page.locator("dx-number-box input:visible, input.dx-texteditor-input[inputmode='decimal']:visible").first
-        campo_num.wait_for(state="visible", timeout=10000)
+    campo_num = modal.locator("input[role='spinbutton']:visible").first
+    if not campo_num.is_visible():
+        campo_num = page.locator("input[role='spinbutton']:visible").first
 
     campo_num.click(force=True)
     campo_num.fill(str(empenho_num))
