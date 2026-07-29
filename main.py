@@ -13,10 +13,11 @@ from playwright.sync_api import sync_playwright
 from campos import registrar_resultado
 from playwright_context import criar_pagina
 from login import login_grp
-from navegacao import ir_para_empenhos
+from navegacao import ir_para_empenhos, ir_para_anulacao_empenhos
 import pandas as pd
 from datetime import datetime
 from empenho_modal import preencher_empenho_oc, preencher_empenho_dotacao
+from anulacao_modal import preencher_anulacao_empenho
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
@@ -203,20 +204,43 @@ def executar_empenhos(page, spreadsheet):
     })
 
     DRY_RUN = False
+    pagina_atual = "empenho"
 
     for idx, row in df.iterrows():
-        oc      = str(row.get("OC", "")).strip()
-        dotacao = str(row.get("DOTACAO", "")).strip()
-        pedido  = str(row.get("Pedido", "")).strip()
+        operacao = str(row.get("OPERACAO", "")).strip().upper()
+        oc       = str(row.get("OC", "")).strip()
+        dotacao  = str(row.get("DOTACAO", "")).strip()
+        pedido   = str(row.get("Pedido", "")).strip()
+        empenho  = str(row.get("EMPENHO", "")).strip()
 
         tem_oc      = oc      != "" and oc.lower()      != "nan"
         tem_dotacao = dotacao != "" and dotacao.lower() != "nan"
 
-        log.info(f"➡️ Linha {idx + 1} | Pedido={pedido} | OC={oc} | DOTACAO={dotacao}")
+        log.info(f"➡️ Linha {idx + 1} | Operação={operacao or 'EMPENHO'} | Pedido={pedido} | OC={oc} | DOTACAO={dotacao} | EMPENHO={empenho}")
 
         try:
-            # OC
-            if tem_oc and not tem_dotacao:
+            # 🚫 ANULAÇÃO DE EMPENHO
+            if operacao == "ANULACAO":
+                log.info("🚫 Tipo: ANULAÇÃO DE EMPENHO")
+                if "anulacaodocumentodespesa" not in page.url:
+                    log.info("🌐 Navegando para tela de Anulação...")
+                    ir_para_anulacao_empenhos(page)
+                    pagina_atual = "anulacao"
+
+                status, info = preencher_anulacao_empenho(page, row)
+                msg = info or "Anulação realizada com sucesso"
+                log.info(f"🎯 Status Anulação: {status} | Info: {msg}")
+
+                registrar_resultado(df, idx, status, msg)
+                atualizar_status_origem(spreadsheet, row, status, msg, empenho or oc)
+
+            # 🧾 EMPENHO OC
+            elif tem_oc and not tem_dotacao:
+                if "anulacaodocumentodespesa" in page.url or pagina_atual != "empenho":
+                    log.info("🌐 Navegando para tela de Empenhos...")
+                    ir_para_empenhos(page)
+                    pagina_atual = "empenho"
+
                 log.info("🧾 Tipo: OC")
                 resultado = preencher_empenho_oc(page, row, row)
 
@@ -244,8 +268,13 @@ def executar_empenhos(page, spreadsheet):
                 df.loc[idx, "EMPENHO_EXISTENTE"] = info or ""
                 atualizar_status_origem(spreadsheet, row, status, msg, info)
 
-            # DOTAÇÃO
+            # 📂 EMPENHO DOTAÇÃO
             elif tem_dotacao and not tem_oc:
+                if "anulacaodocumentodespesa" in page.url or pagina_atual != "empenho":
+                    log.info("🌐 Navegando para tela de Empenhos...")
+                    ir_para_empenhos(page)
+                    pagina_atual = "empenho"
+
                 log.info("📂 Tipo: DOTAÇÃO")
                 status, info = preencher_empenho_dotacao(page, row, DRY_RUN)
                 msg = "Empenho por dotação realizado com sucesso"
@@ -261,7 +290,7 @@ def executar_empenhos(page, spreadsheet):
                 atualizar_status_origem(spreadsheet, row, "ERRO", msg, None)
 
             else:
-                msg = "Linha não possui nem OC nem DOTACAO"
+                msg = "Linha não possui dados suficientes (nem OC, nem DOTACAO, nem ANULACAO)"
                 log.warning(f"⚠️ {msg} — Linha {idx + 1}")
                 registrar_resultado(df, idx, "ERRO", msg)
                 atualizar_status_origem(spreadsheet, row, "ERRO", msg, None)
@@ -274,7 +303,8 @@ def executar_empenhos(page, spreadsheet):
             atualizar_status_origem(spreadsheet, row, "ERRO_AUTOMACAO", msg, None)
             continue
 
-    log.info("✅ Todos os empenhos processados")
+    log.info("✅ Todos os registros processados com sucesso")
+
 
 
 # ============================

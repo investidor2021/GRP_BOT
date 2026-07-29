@@ -654,6 +654,7 @@ st.sidebar.markdown('### 🔄 Fontes de Dados (Planilha)')
 FONTES = {
     "COM/LIC (Pendentes)": "__comlic__",
     "Empenhos Avulsos":    "Avulsos",
+    "Cancelamento de Empenho (Anulação)": "Cancelamento",
     "Padrao Estudante":    "Padrao Estudante",
     "Padrao Frente":       "Padrao Frente",
     "Padrao Postinho":     "Padrao Postinho",
@@ -675,6 +676,9 @@ if st.sidebar.button("🔄 Carregar Dados da Aba", use_container_width=True, typ
     elif aba_key == "Avulsos":
         df_pend = pd.DataFrame(columns=["OC", "DOTACAO", "FORNECEDOR", "HISTORICO", "VALOR", "DATA", "TIPO", "SUBELEMENTO", "FONTE", "APLICACAO"])
         descricao = "planilha limpa de Empenhos Avulsos iniciada"
+    elif aba_key == "Cancelamento":
+        df_pend = pd.DataFrame(columns=["OPERACAO", "ANO", "EMPENHO", "DATA", "VALOR", "HISTORICO", "TIPO_RESTO", "STATUS", "MENSAGEM"])
+        descricao = "planilha limpa de Cancelamentos iniciada"
     else:
         with st.spinner(f"Carregando {fonte_sel}..."):
             try:
@@ -685,8 +689,9 @@ if st.sidebar.button("🔄 Carregar Dados da Aba", use_container_width=True, typ
                 df_pend = pd.DataFrame()
                 descricao = ""
                 
-    if df_pend.empty and aba_key != "Avulsos":
+    if df_pend.empty and aba_key not in ["Avulsos", "Cancelamento"]:
         st.sidebar.info(f"ℹ️ Nenhum registro encontrado em '{fonte_sel}'.")
+
     else:
         st.session_state["df_para_empenhar"] = df_pend
         st.sidebar.success(f"✅ {len(df_pend)} {descricao} carregado(s).")
@@ -864,7 +869,111 @@ if st.session_state.get("fonte_dados") == "Empenhos Avulsos":
                 
     st.divider()
 
-if df_base.empty and st.session_state.get("fonte_dados") != "Empenhos Avulsos":
+elif st.session_state.get("fonte_dados") == "Cancelamento de Empenho (Anulação)":
+    with st.expander("🚫 **Adicionar / Importar Cancelamento de Empenho (Anulação)**", expanded=True):
+        st.info(
+            "ℹ️ **Regras do Exercício (Ano):**\n"
+            "- **Ano Corrente (ex: 2026)**: É processado como **Anulação Normal** (preenche na aba *Documento de Despesa*).\n"
+            "- **Anos Anteriores (ex: 2025)**: Trata-se de **Restos a Pagar**. Selecione entre **Restos Processados** (Aba *Liquidações*) ou **Restos Não Processados** (Aba *Documento de Despesa*)."
+        )
+
+        tab_manual, tab_import = st.tabs(["📝 Digitação Manual / Avulsa", "📁 Importar CSV / Excel / PDF"])
+
+        with tab_manual:
+            col_a1, col_a2, col_a3 = st.columns(3)
+            with col_a1:
+                ano_anul = st.text_input("Ano do Empenho:", value="2026", key="anul_ano")
+                empenho_anul = st.text_input("Número do Empenho:", key="anul_emp")
+            with col_a2:
+                data_anul = st.text_input("Data do Cancelamento:", placeholder="Ex: 01/01/2026", key="anul_data")
+                valor_anul = st.text_input("Valor a Cancelar (R$):", key="anul_val")
+            with col_a3:
+                esfera_opcoes = ["Anulação Normal (Ano Corrente)", "Restos Processados (Ano Anterior)", "Restos Não Processados (Ano Anterior)"]
+                try:
+                    if int(ano_anul.strip()) < 2026:
+                        def_idx = 2
+                    else:
+                        def_idx = 0
+                except Exception:
+                    def_idx = 0
+
+                tipo_resto_anul = st.selectbox(
+                    "Tipo de Cancelamento / Resto:",
+                    options=esfera_opcoes,
+                    index=def_idx,
+                    key="anul_tipo_resto"
+                )
+
+            hist_anul = st.text_input("Histórico / Motivo da Anulação:", key="anul_hist")
+
+            if st.button("➕ Adicionar Cancelamento à Tabela", use_container_width=True, type="secondary"):
+                if empenho_anul.strip() and valor_anul.strip():
+                    nova_anul = {
+                        "OPERACAO": "ANULACAO",
+                        "ANO": ano_anul.strip(),
+                        "EMPENHO": empenho_anul.strip(),
+                        "DATA": data_anul.strip(),
+                        "VALOR": valor_anul.strip(),
+                        "HISTORICO": hist_anul.strip(),
+                        "TIPO_RESTO": tipo_resto_anul,
+                        "STATUS": "",
+                        "MENSAGEM": "",
+                    }
+                    df_atual = st.session_state.get("df_para_empenhar", pd.DataFrame())
+                    df_atual = pd.concat([df_atual, pd.DataFrame([nova_anul])], ignore_index=True)
+                    st.session_state["df_para_empenhar"] = df_atual
+                    st.success("Cancelamento adicionado à tabela!")
+                    st.rerun()
+                else:
+                    st.error("Preencha ao menos o Número do Empenho e o Valor.")
+
+        with tab_import:
+            st.markdown("Faça o upload de um arquivo **CSV**, **Excel (.xlsx, .xls)** ou **PDF** contendo os cancelamentos:")
+            file_anul = st.file_uploader("Arquivo de Cancelamentos", type=["csv", "xlsx", "xls", "pdf"], key="file_anul_upload")
+            if file_anul is not None:
+                try:
+                    if file_anul.name.endswith(".csv"):
+                        df_imp = pd.read_csv(file_anul, dtype=str)
+                    elif file_anul.name.endswith((".xlsx", ".xls")):
+                        df_imp = pd.read_excel(file_anul, dtype=str)
+                    else:
+                        import pdfplumber
+                        pdf_text = ""
+                        with pdfplumber.open(file_anul) as pdf:
+                            for page in pdf.pages:
+                                page_text = page.extract_text()
+                                if page_text: pdf_text += page_text + "\n"
+                        linhas_pdf = []
+                        for line in pdf_text.splitlines():
+                            match_emp = re.search(r"EMPENHO:\s*(\d+)", line, re.IGNORECASE)
+                            match_val = re.search(r"VALOR:\s*([\d\.,]+)", line, re.IGNORECASE)
+                            if match_emp:
+                                linhas_pdf.append({
+                                    "EMPENHO": match_emp.group(1),
+                                    "VALOR": match_val.group(1) if match_val else "0",
+                                    "ANO": "2026", "DATA": "", "HISTORICO": "", "TIPO_RESTO": "Anulação Normal (Ano Corrente)"
+                                })
+                        df_imp = pd.DataFrame(linhas_pdf)
+
+                    df_imp["OPERACAO"] = "ANULACAO"
+                    if "ANO" not in df_imp.columns: df_imp["ANO"] = "2026"
+                    if "EMPENHO" not in df_imp.columns and "Número" in df_imp.columns:
+                        df_imp["EMPENHO"] = df_imp["Número"]
+                    if "TIPO_RESTO" not in df_imp.columns:
+                        df_imp["TIPO_RESTO"] = "Anulação Normal (Ano Corrente)"
+                    
+                    for c in ["STATUS", "MENSAGEM"]:
+                        if c not in df_imp.columns: df_imp[c] = ""
+
+                    st.session_state["df_para_empenhar"] = df_imp
+                    st.success(f"✅ {len(df_imp)} cancelamento(s) carregado(s) do arquivo!")
+                    st.rerun()
+                except Exception as ex_imp:
+                    st.error(f"❌ Erro ao importar arquivo: {ex_imp}")
+
+    st.divider()
+
+if df_base.empty and st.session_state.get("fonte_dados") not in ["Empenhos Avulsos", "Cancelamento de Empenho (Anulação)"]:
     st.info("ℹ️ Carregue o PDF (Seção 1) ou os pendentes (Seção 2) para ver os pedidos aqui.")
 else:
     # Adiciona coluna de seleção se não tiver
@@ -886,13 +995,14 @@ else:
         df_base["DOTACAO"] = ""
 
     # Prioriza a exibição das colunas mais importantes logo no início da tabela (evita esconder a Data à direita)
-    PRIORIDADE = ["OC", "DOTACAO", "Data", "DATA", "FORNECEDOR", "CREDOR", "VALOR", "Valor", "SUBELEMENTO", "Subelemento", "HISTORICO", "Histórico"]
+    PRIORIDADE = ["OPERACAO", "ANO", "EMPENHO", "OC", "DOTACAO", "Data", "DATA", "FORNECEDOR", "CREDOR", "VALOR", "Valor", "TIPO_RESTO", "HISTORICO", "Histórico"]
     cols_prio = []
     for c in PRIORIDADE:
         if c in df_base.columns and c not in cols_prio:
             cols_prio.append(c)
     cols_resto = [c for c in df_base.columns if c not in cols_prio and c != "Selecionar"]
     colunas_editor = ["Selecionar"] + cols_prio + cols_resto
+
 
     # -------------------------------------------------------------
     # SINCRONIZAÇÃO PREVENTIVA DE ESTADO (Para não perder os tiques)
