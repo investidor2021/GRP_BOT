@@ -1259,22 +1259,33 @@ else:
             except Exception as e:
                 st.error(f"❌ Erro ao executar o robô: {e}")
 
-        with st.spinner("Atualizando lista de pendentes..."):
-            df_updated = carregar_pendentes_comlic()
-            st.session_state["df_para_empenhar"] = df_updated
+        nome_fonte_atual = st.session_state.get("fonte_dados", "COM/LIC (Pendentes)")
+        if nome_fonte_atual == "COM/LIC (Pendentes)":
+            with st.spinner("Atualizando lista de pendentes..."):
+                df_updated = carregar_pendentes_comlic()
+                st.session_state["df_para_empenhar"] = df_updated
 
-        if proc.returncode != 0:
-            st.error("⚠️ Ocorreram erros durante a execução do robô. Verifique os logs acima.")
+            if proc.returncode != 0:
+                st.error("⚠️ Ocorreram erros durante a execução do robô. Verifique os logs acima.")
 
-        if os.path.exists("erro_tela_oracle.png"):
-            st.error("📸 O robô capturou a tela exata no momento em que travou!")
-            st.image("erro_tela_oracle.png", caption="Visão do Robô Invisível no momento do Erro", use_container_width=True)
-        else:
-            st.success("✅ Execução concluída!")
-            if not df_updated.empty:
-                st.info(f"🔄 {len(df_updated)} pedido(s) ainda pendente(s) no COM/LIC.")
+            if os.path.exists("erro_tela_oracle.png"):
+                st.error("📸 O robô capturou a tela exata no momento em que travou!")
+                st.image("erro_tela_oracle.png", caption="Visão do Robô Invisível no momento do Erro", use_container_width=True)
             else:
-                st.success("🎉 Nenhum pedido pendente restante no COM/LIC!")
+                st.success("✅ Execução concluída!")
+                if not df_updated.empty:
+                    st.info(f"🔄 {len(df_updated)} pedido(s) ainda pendente(s) no COM/LIC.")
+                else:
+                    st.success("🎉 Nenhum pedido pendente restante no COM/LIC!")
+        else:
+            # Preserva os dados digitados pelo usuário no session_state para reutilização
+            if proc.returncode != 0:
+                st.error("⚠️ Ocorreram erros durante a execução. Todos os seus dados foram preservados na tabela para você corrigir e rodar novamente!")
+            if os.path.exists("erro_tela_oracle.png"):
+                st.error("📸 O robô capturou a tela exata no momento em que travou!")
+                st.image("erro_tela_oracle.png", caption="Visão do Robô no momento do Erro", use_container_width=True)
+            else:
+                st.success("✅ Execução concluída! Todos os dados da tabela foram mantidos na tela.")
 
 # ============================================================
 
