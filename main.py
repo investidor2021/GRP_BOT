@@ -204,7 +204,7 @@ def executar_empenhos(page, spreadsheet):
     })
 
     DRY_RUN = False
-    pagina_atual = "empenho"
+    pagina_atual = None
 
     for idx, row in df.iterrows():
         operacao = str(row.get("OPERACAO", "")).strip().upper()
@@ -222,7 +222,7 @@ def executar_empenhos(page, spreadsheet):
             # 🚫 ANULAÇÃO DE EMPENHO
             if operacao == "ANULACAO":
                 log.info("🚫 Tipo: ANULAÇÃO DE EMPENHO")
-                if "anulacaodocumentodespesa" not in page.url:
+                if pagina_atual != "anulacao" or "anulacaodocumentodespesa" not in page.url:
                     log.info("🌐 Navegando para tela de Anulação...")
                     ir_para_anulacao_empenhos(page)
                     pagina_atual = "anulacao"
@@ -236,7 +236,7 @@ def executar_empenhos(page, spreadsheet):
 
             # 🧾 EMPENHO OC
             elif tem_oc and not tem_dotacao:
-                if "anulacaodocumentodespesa" in page.url or pagina_atual != "empenho":
+                if pagina_atual != "empenho" or "anulacaodocumentodespesa" in page.url or "documentodespesa" not in page.url:
                     log.info("🌐 Navegando para tela de Empenhos...")
                     ir_para_empenhos(page)
                     pagina_atual = "empenho"
@@ -349,9 +349,6 @@ def main():
 
         login_grp(page, usuario, senha)
         log.info("✅ Login realizado")
-
-        ir_para_empenhos(page)
-        log.info("✅ Navegou para empenhos")
 
         executar_empenhos(page, spreadsheet)
 

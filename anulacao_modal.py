@@ -12,31 +12,44 @@ from campos import (
 def abrir_nova_anulacao(page, tentativas=3):
     for tentativa in range(1, tentativas + 1):
         print(f"🆕 [Anulação] Tentativa {tentativa}/{tentativas} de abrir nova anulação")
+        
+        # 🧠 PRIMEIRO: ver se o modal já está visível (verificando o botão Salvar/Fechar)
         try:
-            # Verifica se o modal já está visível por ter o campo de busca/rótulo
-            if page.locator("label:has-text('Ano:')").is_visible():
-                print("🧠 Já estamos na tela de anulação")
+            if page.locator("span.dx-button-text:has-text('Salvar/Fechar'):visible, .dx-button:has-text('Salvar/Fechar'):visible").count() > 0:
+                print("🧠 Já estamos no modal de anulação")
                 return
         except Exception:
             pass
 
-        # Espera overlays/loadpanels desaparecerem
+        # 1️⃣ Esperar overlays/loadpanels desaparecerem de forma segura
         try:
             page.locator(".dx-loadpanel-content:visible, .dx-overlay-content:visible").first.wait_for(state="hidden", timeout=5000)
         except Exception:
             pass
 
+        # 2️⃣ Procurar o botão Novo
+        print("🔍 Buscando botão Novo na tela de anulação...")
         novo_btn = page.locator(".dx-button:has-text('Novo'):visible, .dx-button[aria-label='Novo']:visible").first
         try:
             novo_btn.wait_for(state="visible", timeout=15000)
+            print("🖱️ Clicando no botão Novo...")
             novo_btn.click(force=True)
             page.wait_for_timeout(1000)
-            return
         except Exception as e:
-            print(f"⚠️ Erro ao procurar botão Novo para anulação: {e}")
+            print(f"⚠️ Erro ao procurar/clicar botão Novo para anulação: {e}")
+            page.wait_for_timeout(1500)
+            continue
+
+        # 3️⃣ Confirmar que o modal abriu aguardando o botão Salvar/Fechar aparecer
+        try:
+            page.locator("span.dx-button-text:has-text('Salvar/Fechar'):visible, .dx-button:has-text('Salvar/Fechar'):visible").first.wait_for(state="visible", timeout=10000)
+            print("✅ Modal de anulação aberto com sucesso")
+            return
+        except Exception:
+            print("⚠️ Clique em Novo não abriu o modal, tentando novamente...")
             page.wait_for_timeout(1000)
 
-    raise Exception("❌ Não foi possível abrir a tela de nova anulação")
+    raise Exception("❌ Não foi possível abrir o modal de nova anulação após várias tentativas")
 
 
 def tratar_popup_restos_a_pagar(page):
@@ -48,7 +61,7 @@ def tratar_popup_restos_a_pagar(page):
     print("🧭 Verificando se apareceu popup de Restos a Pagar...")
     dialog = page.locator("div.dx-dialog-message:has-text('Restos a Pagar')")
     try:
-        dialog.wait_for(state="visible", timeout=2000)
+        dialog.wait_for(state="visible", timeout=2500)
         print("⚠️ Popup de Restos a Pagar detectado! Clicando em 'Sim'...")
         
         btn_sim = page.locator("div.dx-dialog-button:has(span.dx-button-text:has-text('Sim')), div[aria-label='Sim']").first
@@ -66,16 +79,6 @@ def tratar_popup_restos_a_pagar(page):
 def preencher_anulacao_empenho(page, row):
     """
     Preenche o formulário de anulação de despesa.
-    Campos na ordem:
-    1. Ano do empenho (combobox)
-    2. Número do empenho (spinbutton)
-    3. [Popup Restos a Pagar - clica Sim se houver]
-    4. Data da anulação (combobox / input)
-    5. Histórico (textarea)
-    6. Seleção de Aba e Valor:
-       - Restos Processados: Aba Liquidações -> spinbutton de valor
-       - Restos Não Processados / Normal: Aba Documento de Despesa -> spinbutton de valor
-    7. Clicar em Salvar/Fechar
     """
     abrir_nova_anulacao(page)
 
@@ -88,9 +91,12 @@ def preencher_anulacao_empenho(page, row):
 
     print(f"📝 Preenchendo Anulação: Ano={ano} | Empenho={empenho_num} | Data={data_val} | TipoResto={tipo_resto}")
 
+    # Pega o contêiner do modal visível para limitar o escopo dos campos
+    modal = page.locator(".dx-popup-normal:visible, .dx-overlay-content:visible").last
+
     # 1. Campo 1: Selecionar Ano do empenho (combobox)
     try:
-        combo_ano = page.locator(".dx-texteditor-input-container input[role='combobox']:visible").first
+        combo_ano = modal.locator("input[role='combobox']:visible").first
         combo_ano.wait_for(state="visible", timeout=10000)
         combo_ano.click(force=True)
         page.wait_for_timeout(200)
@@ -108,7 +114,7 @@ def preencher_anulacao_empenho(page, row):
         print(f"⚠️ Aviso ao preencher ano na anulação: {e}")
 
     # 2. Campo 2: Número do Empenho (spinbutton)
-    campo_num = page.locator("input[role='spinbutton']:visible").first
+    campo_num = modal.locator("input[role='spinbutton']:visible").first
     campo_num.wait_for(state="visible", timeout=10000)
     campo_num.click(force=True)
     campo_num.fill(str(empenho_num))
@@ -126,31 +132,28 @@ def preencher_anulacao_empenho(page, row):
     preencher_textarea(page, "Histórico", historico_val)
 
     # 6. Selecionar Aba e Preencher Valor
-    # Regra: se tipo_resto for "processados" (ou conter "processado" sem "não"), vai na aba Liquidações
     is_processado = "processado" in tipo_resto and "não" not in tipo_resto and "nao" not in tipo_resto
 
     if is_processado:
         print("📂 Alternando para a aba 'Liquidações' (Restos Processados)...")
-        aba_liq = page.locator("span:has-text('Liquidações'), div:has-text('Liquidações')").first
+        aba_liq = modal.locator("span:has-text('Liquidações'), div:has-text('Liquidações')").first
         if aba_liq.is_visible():
             aba_liq.click(force=True)
             page.wait_for_timeout(500)
 
-        # Preencher o campo spinbutton de valor na aba Liquidações
-        campo_val = page.locator("input[role='spinbutton']:visible").first
+        campo_val = modal.locator("input[role='spinbutton']:visible").first
         campo_val.wait_for(state="visible", timeout=5000)
         campo_val.click(force=True)
         campo_val.fill(str(valor_val))
         page.keyboard.press("Tab")
     else:
         print("📂 Alternando para a aba 'Documento de Despesa' (Anulação Normal / Não Processados)...")
-        aba_doc = page.locator("span:has-text('Documento de Despesa'), div:has-text('Documento de Despesa')").first
+        aba_doc = modal.locator("span:has-text('Documento de Despesa'), div:has-text('Documento de Despesa')").first
         if aba_doc.is_visible():
             aba_doc.click(force=True)
             page.wait_for_timeout(500)
 
-        # Preencher o campo spinbutton de valor na aba Documento de Despesa
-        campo_val = page.locator("input[role='spinbutton']:visible").first
+        campo_val = modal.locator("input[role='spinbutton']:visible").first
         campo_val.wait_for(state="visible", timeout=5000)
         campo_val.click(force=True)
         campo_val.fill(str(valor_val))
@@ -158,7 +161,8 @@ def preencher_anulacao_empenho(page, row):
 
     # 7. Salvar e Fechar
     print("💾 Clicando em Salvar/Fechar anulação...")
-    btn_salvar = page.locator("span.dx-button-text:has-text('Salvar/Fechar'), .dx-button:has-text('Salvar/Fechar')").first
+    btn_salvar = modal.locator("span.dx-button-text:has-text('Salvar/Fechar'), .dx-button:has-text('Salvar/Fechar')").first
+    btn_salvar.wait_for(state="visible", timeout=10000)
     btn_salvar.click(force=True)
     page.wait_for_timeout(1000)
 
@@ -177,3 +181,4 @@ def preencher_anulacao_empenho(page, row):
 
     print("✅ Anulação concluída com sucesso.")
     return "SUCESSO", f"Anulação do Empenho {empenho_num} realizada"
+
