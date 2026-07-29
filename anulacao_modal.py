@@ -91,12 +91,12 @@ def preencher_anulacao_empenho(page, row):
 
     print(f"📝 Preenchendo Anulação: Ano={ano} | Empenho={empenho_num} | Data={data_val} | TipoResto={tipo_resto}")
 
-    # Pega o contêiner do modal visível para limitar o escopo dos campos
-    modal = page.locator(".dx-popup-normal:visible, .dx-overlay-content:visible").last
-
     # 1. Campo 1: Selecionar Ano do empenho (combobox)
     try:
-        combo_ano = modal.locator("input[role='combobox']:visible").first
+        combo_ano = page.locator("label:has-text('Ano')").locator("xpath=following-sibling::div").locator("input[role='combobox']:visible, input:visible").first
+        if not combo_ano.is_visible():
+            combo_ano = page.locator("input[role='combobox']:visible").first
+
         combo_ano.wait_for(state="visible", timeout=10000)
         combo_ano.click(force=True)
         page.wait_for_timeout(200)
@@ -114,8 +114,13 @@ def preencher_anulacao_empenho(page, row):
         print(f"⚠️ Aviso ao preencher ano na anulação: {e}")
 
     # 2. Campo 2: Número do Empenho (spinbutton)
-    campo_num = modal.locator("input[role='spinbutton']:visible").first
-    campo_num.wait_for(state="visible", timeout=10000)
+    campo_num = page.locator("input[role='spinbutton']:visible").first
+    try:
+        campo_num.wait_for(state="visible", timeout=10000)
+    except Exception:
+        campo_num = page.locator("dx-number-box input:visible, input.dx-texteditor-input[inputmode='decimal']:visible").first
+        campo_num.wait_for(state="visible", timeout=10000)
+
     campo_num.click(force=True)
     campo_num.fill(str(empenho_num))
     page.wait_for_timeout(300)
@@ -136,24 +141,24 @@ def preencher_anulacao_empenho(page, row):
 
     if is_processado:
         print("📂 Alternando para a aba 'Liquidações' (Restos Processados)...")
-        aba_liq = modal.locator("span:has-text('Liquidações'), div:has-text('Liquidações')").first
+        aba_liq = page.locator("span:has-text('Liquidações'), div:has-text('Liquidações')").first
         if aba_liq.is_visible():
             aba_liq.click(force=True)
             page.wait_for_timeout(500)
 
-        campo_val = modal.locator("input[role='spinbutton']:visible").first
+        campo_val = page.locator("input[role='spinbutton']:visible, input.dx-texteditor-input[inputmode='decimal']:visible").first
         campo_val.wait_for(state="visible", timeout=5000)
         campo_val.click(force=True)
         campo_val.fill(str(valor_val))
         page.keyboard.press("Tab")
     else:
         print("📂 Alternando para a aba 'Documento de Despesa' (Anulação Normal / Não Processados)...")
-        aba_doc = modal.locator("span:has-text('Documento de Despesa'), div:has-text('Documento de Despesa')").first
+        aba_doc = page.locator("span:has-text('Documento de Despesa'), div:has-text('Documento de Despesa')").first
         if aba_doc.is_visible():
             aba_doc.click(force=True)
             page.wait_for_timeout(500)
 
-        campo_val = modal.locator("input[role='spinbutton']:visible").first
+        campo_val = page.locator("input[role='spinbutton']:visible, input.dx-texteditor-input[inputmode='decimal']:visible").first
         campo_val.wait_for(state="visible", timeout=5000)
         campo_val.click(force=True)
         campo_val.fill(str(valor_val))
@@ -161,7 +166,7 @@ def preencher_anulacao_empenho(page, row):
 
     # 7. Salvar e Fechar
     print("💾 Clicando em Salvar/Fechar anulação...")
-    btn_salvar = modal.locator("span.dx-button-text:has-text('Salvar/Fechar'), .dx-button:has-text('Salvar/Fechar')").first
+    btn_salvar = page.locator("span.dx-button-text:has-text('Salvar/Fechar'), .dx-button:has-text('Salvar/Fechar')").first
     btn_salvar.wait_for(state="visible", timeout=10000)
     btn_salvar.click(force=True)
     page.wait_for_timeout(1000)

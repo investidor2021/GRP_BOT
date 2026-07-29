@@ -104,7 +104,8 @@ def ler_empenhar_como_df(spreadsheet):
 def atualizar_status_origem(spreadsheet, row_df, status, mensagem, empenho_existente):
     """
     Atualiza STATUS, MENSAGEM, EMPENHO_EXISTENTE e DATA_PROCESSAMENTO
-    na aba de origem exata (COM/LIC ou Padrões) para a linha correspondente.
+    na aba de origem exata (COM/LIC, Cancelamento ou Padrões) para a linha correspondente.
+    Se a aba de origem não existir no Google Sheets, ela é criada automaticamente.
     """
     fonte = str(row_df.get("FONTE_ORIGEM", ABA_COMLIC)).strip()
     if not fonte or fonte.lower() == "nan":
@@ -113,8 +114,14 @@ def atualizar_status_origem(spreadsheet, row_df, status, mensagem, empenho_exist
     try:
         ws = spreadsheet.worksheet(fonte)
     except Exception as e:
-        log.error(f"❌ Aba origem '{fonte}' não encontrada no Sheets: {e}")
-        return
+        try:
+            headers_padrao = ["OPERACAO", "ANO", "EMPENHO", "DATA", "VALOR", "HISTORICO", "TIPO_RESTO", "STATUS", "MENSAGEM", "EMPENHO_EXISTENTE", "DATA_PROCESSAMENTO"]
+            ws = spreadsheet.add_worksheet(title=fonte, rows="1000", cols="20")
+            ws.append_row(headers_padrao)
+            log.info(f"✨ Criou a aba '{fonte}' automaticamente no Google Sheets com os cabeçalhos padrão.")
+        except Exception as ex_create:
+            log.warning(f"⚠️ Aba origem '{fonte}' não encontrada e não pôde ser criada automaticamente: {ex_create}")
+            return
 
     headers = ws.row_values(1)
     
@@ -125,26 +132,28 @@ def atualizar_status_origem(spreadsheet, row_df, status, mensagem, empenho_exist
                 return i + 1
         return None
 
-    col_status = get_col("STATUS")
-    col_msg    = get_col("MENSAGEM")
-    col_emp    = get_col("EMPENHO_EXISTENTE")
-    col_data   = get_col("DATA_PROCESSAMENTO")
+    col_status  = get_col("STATUS")
+    col_msg     = get_col("MENSAGEM")
+    col_emp_exist = get_col("EMPENHO_EXISTENTE")
+    col_data    = get_col("DATA_PROCESSAMENTO")
 
     # Colunas de busca dependendo da aba
-    col_pedido = get_col("Pedido")
-    col_oc     = get_col("OC")
-    col_dot    = get_col("DOTACAO", "Dotação")
-    col_forn   = get_col("FORNECEDOR", "Credor")
+    col_pedido  = get_col("Pedido")
+    col_oc      = get_col("OC")
+    col_dot     = get_col("DOTACAO", "Dotação")
+    col_forn    = get_col("FORNECEDOR", "Credor")
+    col_emp_num = get_col("EMPENHO", "Empenho")
 
     all_values = ws.get_all_values()
     agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    pedido_alvo = str(row_df.get("Pedido", "")).strip()
-    oc_alvo     = str(row_df.get("OC", "")).strip()
-    dot_alvo    = str(row_df.get("DOTACAO", "")).strip()
-    forn_alvo   = str(row_df.get("FORNECEDOR", "")).strip()
+    pedido_alvo  = str(row_df.get("Pedido", "")).strip()
+    oc_alvo      = str(row_df.get("OC", "")).strip()
+    dot_alvo     = str(row_df.get("DOTACAO", "")).strip()
+    forn_alvo    = str(row_df.get("FORNECEDOR", "")).strip()
+    emp_num_alvo = str(row_df.get("EMPENHO", row_df.get("Empenho", ""))).strip()
 
-    log.debug(f"Buscando na aba '{fonte}': Pedido='{pedido_alvo}' | OC='{oc_alvo}' | Dot='{dot_alvo}' | Forn='{forn_alvo}'")
+    log.debug(f"Buscando na aba '{fonte}': Pedido='{pedido_alvo}' | OC='{oc_alvo}' | Dot='{dot_alvo}' | Empenho='{emp_num_alvo}'")
 
     for i, row_vals in enumerate(all_values[1:], start=2):
         bate = False
@@ -153,27 +162,29 @@ def atualizar_status_origem(spreadsheet, row_df, status, mensagem, empenho_exist
             if not idx_1based or len(row_vals) < idx_1based: return ""
             return str(row_vals[idx_1based - 1]).strip()
 
-        if fonte == ABA_COMLIC or oc_alvo:
-            # Lógica antiga para COM/LIC ou itens com OC
-            linha_ped = safe_val(col_pedido)
-            linha_oc  = safe_val(col_oc)
-            if (oc_alvo and linha_oc == oc_alvo) or \
-               (pedido_alvo and linha_ped == pedido_alvo) or \
-               (oc_alvo and linha_ped == oc_alvo):
-                bate = True
-        else:
-            # Lógica nova para abas Padrão (usa Dotação + Fornecedor como chave de busca)
-            linha_dot = safe_val(col_dot)
-            linha_forn = safe_val(col_forn)
-            
-            if dot_alvo and linha_dot == dot_alvo and linha_forn == forn_alvo:
-                bate = True
+        linha_emp = safe_val(col_emp_num)
+        linha_ped = safe_val(col_pedido)
+        linha_oc  = safe_val(col_oc)
+        linha_dot = safe_val(col_dot)
+        linha_forn = safe_val(col_forn)
+
+        # Chave 1: por Número de EMPENHO (ideal para Anulação e Empenhos Avulsos)
+        if emp_num_alvo and linha_emp == emp_num_alvo:
+            bate = True
+        # Chave 2: por OC / Pedido
+        elif (oc_alvo and linha_oc == oc_alvo) or \
+             (pedido_alvo and linha_ped == pedido_alvo) or \
+             (oc_alvo and linha_ped == oc_alvo):
+            bate = True
+        # Chave 3: por Dotação + Fornecedor
+        elif dot_alvo and linha_dot == dot_alvo and (not forn_alvo or linha_forn == forn_alvo):
+            bate = True
 
         if bate:
             updates = []
             if col_status: updates.append({"range": gspread.utils.rowcol_to_a1(i, col_status), "values": [[status]]})
             if col_msg:    updates.append({"range": gspread.utils.rowcol_to_a1(i, col_msg),    "values": [[mensagem]]})
-            if col_emp:    updates.append({"range": gspread.utils.rowcol_to_a1(i, col_emp),    "values": [[empenho_existente or ""]]})
+            if col_emp_exist: updates.append({"range": gspread.utils.rowcol_to_a1(i, col_emp_exist), "values": [[empenho_existente or ""]]})
             if col_data:   updates.append({"range": gspread.utils.rowcol_to_a1(i, col_data),   "values": [[agora]]})
 
             if updates:
@@ -182,6 +193,7 @@ def atualizar_status_origem(spreadsheet, row_df, status, mensagem, empenho_exist
             return
 
     log.warning(f"⚠️ Não encontrou a linha original na aba '{fonte}' para atualizar o status.")
+
 
 
 
