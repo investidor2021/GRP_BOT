@@ -225,42 +225,59 @@ def preencher_anulacao_empenho(page, row):
 
     # 7. Selecionar Aba e Preencher Valor
     tipo_resto_lower = str(tipo_resto).lower()
-    # Se contiver 'liq', 'processad', 'rp processado', 'restos processados' -> Liquidações
-    is_processado = any(k in tipo_resto_lower for k in ["liquida", "processad"]) and ("não" not in tipo_resto_lower and "nao" not in tipo_resto_lower)
+    
+    # Se tipo_resto contiver 'não processad' ou 'documento', usa Documento de Despesa.
+    # Caso contrário (processado, liquidações, rp, ou padrão), usa Liquidações!
+    if any(k in tipo_resto_lower for k in ["não processad", "nao processad", "documento de despesa"]):
+        is_processado = False
+    else:
+        is_processado = True
 
     print(f"📂 Alternando aba da anulação (TipoResto='{tipo_resto}' -> Processado={is_processado})...")
+
     if is_processado:
-        aba = page.locator("span:has-text('Liquidações'), div.tab-header:has-text('Liquidações'), div:has-text('Liquidações')").first
+        print("📂 Procurando aba 'Liquidações'...")
+        aba = page.locator(".tab-header:has-text('Liquidações'), span:has-text('Liquidações'), div:has-text('Liquidações'), .dx-tab:has-text('Liquidações')").first
     else:
-        aba = page.locator("span:has-text('Documento de Despesa'), div.tab-header:has-text('Documento de Despesa'), div:has-text('Documento de Despesa')").first
+        print("📂 Procurando aba 'Documento de Despesa'...")
+        aba = page.locator(".tab-header:has-text('Documento de Despesa'), span:has-text('Documento de Despesa'), div:has-text('Documento de Despesa'), .dx-tab:has-text('Documento de Despesa')").first
 
     try:
         if aba.is_visible(timeout=5000):
+            print("🖱️ Clicando na aba...")
             aba.click(force=True)
             page.wait_for_timeout(800)
         else:
+            print("🔍 Aba não encontrada via CSS. Tentando get_by_text...")
             page.get_by_text("Liquidações" if is_processado else "Documento de Despesa").first.click(force=True)
             page.wait_for_timeout(800)
     except Exception as ex_tab:
         print(f"⚠️ Aviso ao alternar aba: {ex_tab}")
 
     print(f"💰 Preenchendo o Valor na tabela da aba: {valor_val}")
-    # NUNCA utilizar o campo do Empenho! O valor da anulação fica OBRIGATORIAMENTE em uma célula da tabela (td ou dx-data-grid)
-    campo_val = page.locator("dx-data-grid input:visible, td[aria-colindex='6'] input:visible, td input.dx-texteditor-input:visible, td input[role='spinbutton']:visible").first
-
+    # DevExpress DataGrid: PRIMEIRO clica na célula da coluna Anular (td aria-colindex='6') para ativar o modo de edição inline
     try:
-        campo_val.wait_for(state="visible", timeout=10000)
+        celula_td = page.locator("dx-data-grid td[aria-colindex='6']:visible, td[aria-colindex='6']:visible, td:has(dx-number-box):visible, td.dx-cell-focus-disabled:visible").first
+        if celula_td.is_visible(timeout=5000):
+            print("🖱️ Clicando na célula da tabela (coluna Anular)...")
+            celula_td.click(force=True)
+            page.wait_for_timeout(300)
+
+        # Agora captura o input ativado dentro da célula da tabela
+        campo_val = page.locator("dx-data-grid input:visible, td[aria-colindex='6'] input:visible, td input[role='spinbutton']:visible").first
+        campo_val.wait_for(state="visible", timeout=8000)
         campo_val.click(force=True)
         page.wait_for_timeout(200)
         page.keyboard.press("Control+A")
         page.keyboard.press("Backspace")
         campo_val.fill(str(valor_val))
         page.wait_for_timeout(300)
-        campo_val.press("Tab")
+        page.keyboard.press("Enter")
+        page.keyboard.press("Tab")
         page.wait_for_timeout(500)
         print(f"✅ Valor {valor_val} preenchido na tabela.")
     except Exception as ex_val:
-        print(f"❌ Não foi possível preencher o valor na tabela: {ex_val}")
+        print(f"❌ Erro ao preencher valor na tabela: {ex_val}")
 
 def ler_estado_da_tela(page, timeout=3000):
     """
