@@ -154,25 +154,35 @@ def preencher_anulacao_empenho(page, row):
     # 1. Abrir nova anulação (ajustando o Ano no filtro da página principal ANTES do clique em Novo)
     abrir_nova_anulacao(page, ano_alvo=ano)
 
-    # 2. Campo 1: Selecionar Ano dentro do modal (se houver combobox de ano no modal)
+    # 2. Campo 1: Selecionar Ano DENTRO do modal (primeiro combobox visível do formulário)
+    print(f"📅 Selecionando o Ano ({ano}) dentro do formulário de anulação...")
     try:
-        combo_ano_modal = page.locator(".dx-popup-content:visible label:has-text('Ano')").locator("xpath=following-sibling::div").locator("input[role='combobox']:visible").first
-        if combo_ano_modal.is_visible():
-            combo_ano_modal.click(force=True)
-            page.wait_for_timeout(200)
-            combo_ano_modal.fill(ano)
-            page.wait_for_timeout(200)
-            opcao_ano = page.get_by_role("option").filter(has_text=ano)
-            if opcao_ano.count() > 0:
-                opcao_ano.first.click(force=True)
-            else:
-                page.keyboard.press("Enter")
-            page.keyboard.press("Tab")
-            page.wait_for_timeout(300)
+        combo_ano_modal = (
+            page.locator(".dx-popup-content:visible input[role='combobox']:visible, .dx-overlay-content:visible input[role='combobox']:visible, input[role='combobox']:visible")
+            .first
+        )
+        combo_ano_modal.wait_for(state="visible", timeout=10000)
+        combo_ano_modal.click(force=True)
+        page.wait_for_timeout(200)
+        page.keyboard.press("Control+A")
+        page.keyboard.press("Backspace")
+        combo_ano_modal.fill(str(ano))
+        page.wait_for_timeout(300)
+
+        opcao_ano = page.get_by_role("option").filter(has_text=str(ano))
+        if opcao_ano.count() > 0:
+            opcao_ano.first.click(force=True)
+        else:
+            page.keyboard.press("Enter")
+            
+        page.keyboard.press("Tab")
+        page.wait_for_timeout(500)
+        print(f"✅ Ano {ano} selecionado com sucesso no modal.")
     except Exception as e:
         print(f"⚠️ Aviso ao preencher ano no modal da anulação: {e}")
 
     # 3. Campo 2: Número do Empenho (spinbutton)
+    print(f"🔢 Digitando número do Empenho: {empenho_num}")
     campo_num = page.locator("input[role='spinbutton']:visible").first
     try:
         campo_num.wait_for(state="visible", timeout=10000)
@@ -185,6 +195,23 @@ def preencher_anulacao_empenho(page, row):
     page.wait_for_timeout(300)
     campo_num.press("Tab")
     page.wait_for_timeout(1000)
+
+    # Verifica se apareceu popup "Empenho não encontrado" ou de erro
+    try:
+        dialog_erro = page.locator("div.dx-dialog-message:has-text('não encontrado'), div.dx-dialog-message:has-text('Não foi encontrado')")
+        if dialog_erro.is_visible(timeout=1500):
+            msg_erro = dialog_erro.inner_text()
+            print(f"⚠️ {msg_erro}")
+            btn_ok = page.locator("span.dx-button-text:has-text('OK'), div.dx-dialog-button:has-text('OK')").first
+            if btn_ok.is_visible():
+                btn_ok.click(force=True)
+            page.wait_for_timeout(500)
+            btn_fechar = page.locator("span.dx-button-text:has-text('Fechar'), .dx-button:has-text('Fechar')").first
+            if btn_fechar.is_visible():
+                btn_fechar.click(force=True)
+            return "ERRO", f"Empenho {empenho_num} não encontrado para anulação ({ano})"
+    except Exception:
+        pass
 
     # 4. Trata Popup de Restos a Pagar se surgir após digitar o Empenho
     tratar_popup_restos_a_pagar(page, timeout=4000)
