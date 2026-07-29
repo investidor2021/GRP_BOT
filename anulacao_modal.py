@@ -9,53 +9,7 @@ from campos import (
 )
 
 
-def ajustar_ano_filtro_principal(page, ano_alvo):
-    """
-    Ajusta o filtro 'Ano:' na barra superior da tela ANTES de clicar em Novo.
-    """
-    if not ano_alvo:
-        return
-
-    ano_alvo = str(ano_alvo).strip()
-    print(f"🌐 Verificando filtro principal de Ano na página: {ano_alvo}")
-
-    try:
-        campo_ano_header = (
-            page.locator("label:has-text('Ano:')")
-            .locator("..")
-            .locator("input[role='combobox']:visible")
-            .first
-        )
-
-        if campo_ano_header.is_visible():
-            val_atual = campo_ano_header.input_value()
-            if val_atual != ano_alvo:
-                print(f"🔄 Alterando filtro principal de Ano de '{val_atual}' para '{ano_alvo}'...")
-                campo_ano_header.click(force=True)
-                page.wait_for_timeout(200)
-                campo_ano_header.fill(ano_alvo)
-                page.wait_for_timeout(200)
-
-                opcao = page.get_by_role("option").filter(has_text=ano_alvo)
-                if opcao.count() > 0:
-                    opcao.first.click(force=True)
-                else:
-                    page.keyboard.press("Enter")
-
-                page.wait_for_timeout(1000)
-                try:
-                    page.locator(".dx-loadpanel-content:visible").first.wait_for(state="hidden", timeout=5000)
-                except Exception:
-                    pass
-    except Exception as e:
-        print(f"⚠️ Aviso ao ajustar ano no filtro principal da página: {e}")
-
-
-def abrir_nova_anulacao(page, ano_alvo="2026", tentativas=3):
-    # Ajusta o filtro de Ano na página principal caso o modal não esteja aberto
-    if page.locator("span.dx-button-text:has-text('Salvar/Fechar'):visible").count() == 0:
-        ajustar_ano_filtro_principal(page, ano_alvo)
-
+def abrir_nova_anulacao(page, tentativas=3):
     for tentativa in range(1, tentativas + 1):
         print(f"🆕 [Anulação] Tentativa {tentativa}/{tentativas} de abrir nova anulação")
         
@@ -149,44 +103,45 @@ def preencher_anulacao_empenho(page, row):
     valor_val = normalizar_valor_excel(row.get("VALOR") or row.get("Valor") or "0")
     tipo_resto = str(row.get("TIPO_RESTO") or row.get("TIPO") or "").strip().lower()
 
-    print(f"📝 Preenchendo Anulação: Ano={ano} | Empenho={empenho_num} | Data={data_val} | TipoResto={tipo_resto}")
+    print(f"📝 Preenchendo Anulação: Exercício/Ano={ano} | Empenho={empenho_num} | Data={data_val} | TipoResto={tipo_resto}")
 
-    # 1. Abrir nova anulação (ajustando o Ano no filtro da página principal ANTES do clique em Novo)
-    abrir_nova_anulacao(page, ano_alvo=ano)
+    # 1. Abrir nova anulação (clica no botão Novo)
+    abrir_nova_anulacao(page)
 
-    # Contêiner estrito do modal visível
+    # Contêiner do modal
     modal = page.locator("div.dx-popup-content:visible").last
 
-    # 2. Campo 1: Selecionar Ano DENTRO do modal (se houver combobox no modal)
+    # 2. Campo 1: Exercício (Ano) -> exercicio-contabil-seletor
+    print(f"📅 Selecionando Exercício ({ano}) no campo exercicio-contabil-seletor...")
     try:
-        combo_ano_modal = modal.locator("input[role='combobox']:visible").first
-        if combo_ano_modal.is_visible():
-            print(f"📅 Selecionando Ano ({ano}) dentro da janela modal...")
-            combo_ano_modal.click(force=True)
-            page.wait_for_timeout(200)
-            page.keyboard.press("Control+A")
-            page.keyboard.press("Backspace")
-            combo_ano_modal.fill(str(ano))
-            page.wait_for_timeout(300)
+        combo_ex = modal.locator("exercicio-contabil-seletor input.dx-texteditor-input:visible, label:has-text('Exercicio') + div input:visible, label:has-text('Exercício') + div input:visible").first
+        if not combo_ex.is_visible():
+            combo_ex = page.locator("exercicio-contabil-seletor input.dx-texteditor-input:visible").first
 
-            opcao_ano = page.get_by_role("option").filter(has_text=str(ano))
-            if opcao_ano.count() > 0:
-                opcao_ano.first.click(force=True)
-            else:
-                page.keyboard.press("Enter")
-                
-            page.keyboard.press("Tab")
-            page.wait_for_timeout(400)
-            print(f"✅ Ano {ano} preenchido no modal.")
+        combo_ex.wait_for(state="visible", timeout=10000)
+        combo_ex.click(force=True)
+        page.wait_for_timeout(200)
+        page.keyboard.press("Control+A")
+        page.keyboard.press("Backspace")
+        combo_ex.fill(str(ano))
+        page.wait_for_timeout(300)
+
+        opcao_ano = page.get_by_role("option").filter(has_text=str(ano))
+        if opcao_ano.count() > 0:
+            opcao_ano.first.click(force=True)
+        else:
+            page.keyboard.press("Enter")
+            
+        page.keyboard.press("Tab")
+        page.wait_for_timeout(400)
+        print(f"✅ Exercício {ano} preenchido.")
     except Exception as e:
-        print(f"⚠️ Aviso ao preencher ano no modal da anulação: {e}")
+        print(f"⚠️ Erro/Aviso ao preencher Exercício no modal: {e}")
 
-    # 3. Campo 2: Número do Empenho (spinbutton dentro do modal)
+    # 3. Campo 2: Empenho (Número) -> dx-number-box
     print(f"🔢 Digitando número do Empenho: {empenho_num}")
-    campo_num = modal.locator("input[role='spinbutton']:visible").first
-    if not campo_num.is_visible():
-        campo_num = page.locator("input[role='spinbutton']:visible").first
-
+    campo_num = modal.locator("dx-number-box input:visible, label:has-text('Empenho') + div input:visible, input[role='spinbutton']:visible").first
+    campo_num.wait_for(state="visible", timeout=10000)
     campo_num.click(force=True)
     campo_num.fill(str(empenho_num))
     page.wait_for_timeout(300)
@@ -213,38 +168,60 @@ def preencher_anulacao_empenho(page, row):
     # 4. Trata Popup de Restos a Pagar se surgir após digitar o Empenho
     tratar_popup_restos_a_pagar(page, timeout=4000)
 
-    # 5. Campo 3: Data da anulação
-    preencher_data_se_existir(page, data_val)
+    # 5. Campo 3: Data -> dx-date-box
+    if data_val:
+        data_norm = normalizar_data_excel(data_val)
+        if data_norm:
+            print(f"📅 Preenchendo Data: {data_norm}")
+            try:
+                campo_data = modal.locator("dx-date-box input:visible, label:has-text('Data:') + div input:visible").first
+                campo_data.wait_for(state="visible", timeout=5000)
+                campo_data.click(force=True)
+                page.wait_for_timeout(100)
+                page.keyboard.press("Control+A")
+                page.keyboard.press("Backspace")
+                page.keyboard.type(str(data_norm), delay=50)
+                page.wait_for_timeout(200)
+                page.keyboard.press("Tab")
+            except Exception as ex_dt:
+                print(f"⚠️ Erro ao preencher Data ({data_norm}): {ex_dt}")
 
-    # Garante que nenhum popup residual da data ou validação ficou na tela antes de ir pro Histórico
     tratar_popup_restos_a_pagar(page, timeout=1000)
 
-    # 6. Campo 4: Histórico (textarea)
-    preencher_textarea(page, "Histórico", historico_val)
+    # 6. Campo 4: Histórico -> dx-text-area
+    print(f"📝 Preenchendo Histórico: {historico_val[:30]}...")
+    try:
+        campo_hist = modal.locator("dx-text-area textarea:visible, label:has-text('Histórico') + div textarea:visible").first
+        campo_hist.wait_for(state="visible", timeout=5000)
+        campo_hist.click(force=True)
+        campo_hist.fill(str(historico_val))
+        page.keyboard.press("Tab")
+    except Exception as ex_h:
+        print(f"⚠️ Erro ao preencher Histórico: {ex_h}")
 
     # 7. Selecionar Aba e Preencher Valor
     is_processado = "processado" in tipo_resto and "não" not in tipo_resto and "nao" not in tipo_resto
 
     if is_processado:
         print("📂 Alternando para a aba 'Liquidações' (Restos Processados)...")
-        aba_liq = page.locator("span:has-text('Liquidações'), div:has-text('Liquidações')").first
+        aba_liq = modal.locator("span:has-text('Liquidações'), div:has-text('Liquidações')").first
         if aba_liq.is_visible():
             aba_liq.click(force=True)
             page.wait_for_timeout(500)
 
-        campo_val = page.locator("input[role='spinbutton']:visible, input.dx-texteditor-input[inputmode='decimal']:visible").first
+        campo_val = modal.locator("dx-number-box input:visible, input[role='spinbutton']:visible").first
         campo_val.wait_for(state="visible", timeout=5000)
         campo_val.click(force=True)
         campo_val.fill(str(valor_val))
         page.keyboard.press("Tab")
     else:
         print("📂 Alternando para a aba 'Documento de Despesa' (Anulação Normal / Não Processados)...")
-        aba_doc = page.locator("span:has-text('Documento de Despesa'), div:has-text('Documento de Despesa')").first
+        aba_doc = modal.locator("span:has-text('Documento de Despesa'), div:has-text('Documento de Despesa')").first
         if aba_doc.is_visible():
             aba_doc.click(force=True)
             page.wait_for_timeout(500)
 
-        campo_val = page.locator("input[role='spinbutton']:visible, input.dx-texteditor-input[inputmode='decimal']:visible").first
+        campo_val = modal.locator("dx-number-box input:visible, input[role='spinbutton']:visible").first
         campo_val.wait_for(state="visible", timeout=5000)
         campo_val.click(force=True)
         campo_val.fill(str(valor_val))
@@ -252,7 +229,7 @@ def preencher_anulacao_empenho(page, row):
 
     # 8. Salvar e Fechar
     print("💾 Clicando em Salvar/Fechar anulação...")
-    btn_salvar = page.locator("span.dx-button-text:has-text('Salvar/Fechar'), .dx-button:has-text('Salvar/Fechar')").first
+    btn_salvar = modal.locator("span.dx-button-text:has-text('Salvar/Fechar'), .dx-button:has-text('Salvar/Fechar')").first
     btn_salvar.wait_for(state="visible", timeout=10000)
     btn_salvar.click(force=True)
     page.wait_for_timeout(1000)
