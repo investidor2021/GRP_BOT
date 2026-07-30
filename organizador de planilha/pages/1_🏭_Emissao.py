@@ -933,7 +933,11 @@ elif st.session_state.get("fonte_dados") == "Cancelamento de Empenho (Anulação
             if file_anul is not None:
                 try:
                     if file_anul.name.endswith(".csv"):
-                        df_imp = pd.read_csv(file_anul, dtype=str)
+                        try:
+                            df_imp = pd.read_csv(file_anul, dtype=str, sep=None, engine="python")
+                        except Exception:
+                            file_anul.seek(0)
+                            df_imp = pd.read_csv(file_anul, dtype=str, sep=";")
                     elif file_anul.name.endswith((".xlsx", ".xls")):
                         df_imp = pd.read_excel(file_anul, dtype=str)
                     else:
