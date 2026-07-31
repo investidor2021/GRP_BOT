@@ -200,7 +200,7 @@ def conectar_sheets():
 
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def carregar_planilhas_classificacao():
     spreadsheet = conectar_sheets()
     ws_dotacao    = spreadsheet.worksheet("dotacao")
@@ -223,6 +223,7 @@ def carregar_planilhas_classificacao():
     return df_dotacao, df_keywords
 
 
+@st.cache_data(ttl=120)
 def carregar_pendentes_comlic():
     """Carrega registros do COM/LIC onde STATUS está vazio ou é PENDENTE."""
     spreadsheet = conectar_sheets()
@@ -266,6 +267,7 @@ def carregar_pendentes_comlic():
     return df.reset_index(drop=True)
 
 
+@st.cache_data(ttl=120)
 def carregar_aba_padrao(nome_aba):
     """Carrega todos os registros de uma aba Padrão da planilha.
     Usa get_all_values() para suportar abas com cabeçalhos vazios/duplicados."""
@@ -1069,16 +1071,25 @@ else:
 
         st.caption(f"📋 {len(df_base_display)} pedido(s) correspondente(s) aos filtros. Marque os que deseja empenhar:")
 
-        # 3. Botões Rápidos Visuais DENTRO do Form (O botão Marcar não faz reload desnecessario de fora pra dentro)
-        col_sel1, col_sel2, _ = st.columns([3, 3, 6])
+        # 3. Botões Rápidos Visuais DENTRO do Form
+        col_sel1, col_sel2, col_sel3, _ = st.columns([3, 3, 3, 3])
         with col_sel1:
              marcar_tudo = st.form_submit_button("☑️ Marcar Todas Visíveis", use_container_width=True)
         with col_sel2:
+             marcar_50 = st.form_submit_button("☑️ Marcar Primeiras 50", use_container_width=True)
+        with col_sel3:
              desmarcar_tudo = st.form_submit_button("🔲 Desmarcar Todas Visíveis", use_container_width=True)
 
         if marcar_tudo:
              df_base.loc[df_base_display.index, "Selecionar"] = True
              df_base_display["Selecionar"] = True
+             st.session_state["df_para_empenhar"] = df_base
+        if marcar_50:
+             df_base.loc[df_base_display.index, "Selecionar"] = False
+             df_base_display["Selecionar"] = False
+             primeiras_50_idx = df_base_display.index[:50]
+             df_base.loc[primeiras_50_idx, "Selecionar"] = True
+             df_base_display.loc[primeiras_50_idx, "Selecionar"] = True
              st.session_state["df_para_empenhar"] = df_base
         if desmarcar_tudo:
              df_base.loc[df_base_display.index, "Selecionar"] = False
@@ -1109,8 +1120,8 @@ else:
         else:
             aplicar_lote = False
 
-        # 6. Renderizando o Data Editor com Chave Única Inteligente (impede fantasmas de views antigos)
-        hash_str = f"{filtro_pedido}_{filtro_fornecedor}_{marcar_tudo}_{desmarcar_tudo}"
+        # 6. Renderizando o Data Editor com Chave Única Inteligente (com altura fixa para virtualização ultra rápida)
+        hash_str = f"{filtro_pedido}_{filtro_fornecedor}_{marcar_tudo}_{marcar_50}_{desmarcar_tudo}"
         widget_key = "tabela_" + hashlib.md5(hash_str.encode()).hexdigest()
         
         st.session_state["last_widget_key"] = widget_key
@@ -1120,7 +1131,8 @@ else:
             df_base_display[colunas_editor],
             column_config=config,
             hide_index=True,
-            use_container_width=False,
+            use_container_width=True,
+            height=450,
             key=widget_key
         )
         
@@ -1237,6 +1249,9 @@ else:
                 except Exception:
                     pass
 
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+
                 proc = subprocess.Popen(
                     [sys.executable, os.path.abspath(MAIN_PY_PATH)],
                     stdout=subprocess.PIPE,
@@ -1248,9 +1263,21 @@ else:
                     env=custom_env
                 )
                 for line in proc.stdout:
-                    log_lines.append(line.rstrip())
+                    line_clean = line.rstrip()
+                    log_lines.append(line_clean)
                     log_area.code("\n".join(log_lines[-40:]), language="bash")
+
+                    # Atualiza barra de progresso e status em tempo real
+                    match_linha = re.search(r"Linha\s+(\d+)", line_clean)
+                    if match_linha and n_exec > 0:
+                        curr_row = int(match_linha.group(1))
+                        pct = min(1.0, curr_row / n_exec)
+                        progress_bar.progress(pct)
+                        status_text.markdown(f"⏳ **Progresso em Tempo Real:** {curr_row} de {n_exec} ({int(pct * 100)}%) processado(s)...")
+
                 proc.wait()
+                progress_bar.progress(1.0)
+                status_text.markdown(f"✅ **Processamento Concluído:** {n_exec} de {n_exec} (100%)")
 
                 if proc.returncode == 0:
                     st.success("✅ Robô finalizado com sucesso!")
