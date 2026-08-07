@@ -94,11 +94,24 @@ def classificar_por_palavra_chave(descricao, df_keywords, elemento):
     desc_norm = normalizar(descricao)    # ex: "aquisicao de pneus" 
     desc_radical = radicalizar(desc_norm)  # ex: "aquisicao de pneu"
 
-    df_filtrado = df_keywords[df_keywords["ELEMENTO"] == elemento]
+    if df_keywords.empty:
+        return "", "", 0
+
+    col_elem = "ELEMENTO" if "ELEMENTO" in df_keywords.columns else df_keywords.columns[0]
+    
+    elemento_str = str(elemento).strip() if elemento else ""
+    if elemento_str:
+        df_filtrado = df_keywords[df_keywords[col_elem].astype(str).str.strip() == elemento_str]
+        if df_filtrado.empty:
+            df_filtrado = df_keywords  # Fallback caso não ache o elemento exato
+    else:
+        df_filtrado = df_keywords
+
     for _, row in df_filtrado.iterrows():
-        codigo = str(row["CODIGO"]).zfill(2)
-        nome   = row["NOME"]
-        palavras = str(row["PALAVRAS"]).upper().split(",")
+        codigo = str(row["CODIGO"]).zfill(2) if "CODIGO" in row else str(row.iloc[1]).zfill(2)
+        nome   = row["NOME"] if "NOME" in row else row.iloc[2]
+        palavras_raw = row["PALAVRAS"] if "PALAVRAS" in row else (row.iloc[3] if len(row) > 3 else "")
+        palavras = str(palavras_raw).upper().split(",")
         for palavra in palavras:
             palavra = palavra.strip()
             if not palavra:
@@ -354,63 +367,74 @@ def atualizar_subelementos_vazios(df_dotacao, df_keywords):
     spreadsheet = conectar_sheets()
     ws = spreadsheet.worksheet(ABA_COMLIC)
     
-    expected_headers = [
-        "Pedido", "Data", "Fornecedor", "Descrição", "Dotação",
-        "Elemento", "Subelemento", "Descrição Subelemento",
-        "Confiabilidade", "STATUS", "MENSAGEM",
-        "EMPENHO_EXISTENTE", "DATA_PROCESSAMENTO"
-    ]
-    
-    # Busca 1 a 1 para preservar a linha original do Sheets
     todas_linhas = ws.get_all_values()
     if not todas_linhas or len(todas_linhas) < 2:
         return 0, 0
         
     cabecalho = todas_linhas[0]
-    # Mapear índices das colunas para achar rápido
-    mapa_colunas = {nome.strip(): idx for idx, nome in enumerate(cabecalho)}
     
-    col_sub_idx = mapa_colunas.get("Subelemento")
-    col_desc_idx = mapa_colunas.get("Descrição", -1)
-    col_elem_idx = mapa_colunas.get("Elemento", -1)
-    col_dot_idx = mapa_colunas.get("Dotação", -1)
-    col_nomesub_idx = mapa_colunas.get("Descrição Subelemento")
-    col_conf_idx = mapa_colunas.get("Confiabilidade")
-    col_status_idx = mapa_colunas.get("STATUS", -1)
+    # Mapear índices das colunas de forma flexível (insensível a maiúsculas/minúsculas e acentos)
+    mapa_colunas = {}
+    for idx, nome in enumerate(cabecalho):
+        norm = normalizar(nome)
+        if norm in ["subelemento", "sub_elemento"]:
+            mapa_colunas["subelemento"] = idx
+        elif norm in ["descricao", "descriçao", "historico", "historica"]:
+            mapa_colunas["descricao"] = idx
+        elif norm in ["elemento"]:
+            mapa_colunas["elemento"] = idx
+        elif norm in ["dotacao", "dotaçao"]:
+            mapa_colunas["dotacao"] = idx
+        elif norm in ["descricao subelemento", "descriçao subelemento", "nome subelemento", "nome_subelemento"]:
+            mapa_colunas["descricao_subelemento"] = idx
+        elif norm in ["confiabilidade"]:
+            mapa_colunas["confiabilidade"] = idx
+        elif norm in ["status"]:
+            mapa_colunas["status"] = idx
 
-    if col_sub_idx is None or col_desc_idx == -1:
+    col_sub_idx = mapa_colunas.get("subelemento")
+    col_desc_idx = mapa_colunas.get("descricao")
+
+    if col_sub_idx is None or col_desc_idx is None:
         return 0, 0
-        
+
+    def get_val(row_list, col_idx):
+        if col_idx is not None and 0 <= col_idx < len(row_list):
+            return str(row_list[col_idx]).strip()
+        return ""
+
     atualizacoes = []
     total_celulas_verificadas = 0
+    linhas_corrigidas = 0
     
     # range 1-based no spreadsheet, pula o cabeçalho (i=0 -> row=1, i=1 -> row=2)
     for i in range(1, len(todas_linhas)):
         linha = todas_linhas[i]
         
         # Ignora empenhos já concluídos
-        if col_status_idx != -1 and i < len(linha) and "SUCESSO" in str(linha[col_status_idx]).upper():
+        status_val = get_val(linha, mapa_colunas.get("status"))
+        if "SUCESSO" in status_val.upper():
             continue
 
-        str_subelemento = str(linha[col_sub_idx]).strip() if col_sub_idx < len(linha) else ""
+        str_subelemento = get_val(linha, col_sub_idx)
         
-        # Só recalcula se Subelemento estiver em branco
-        if str_subelemento in ["", "nan", "None"]:
+        # Só recalcula se Subelemento estiver em branco / não preenchido
+        if str_subelemento.lower() in ["", "nan", "none", "null", "<na>", "0", "00", "-"] or not str_subelemento:
             total_celulas_verificadas += 1
             
-            descricao = str(linha[col_desc_idx]).strip() if col_desc_idx < len(linha) else ""
-            elemento = str(linha[col_elem_idx]).strip() if col_elem_idx < len(linha) else ""
+            descricao = get_val(linha, col_desc_idx)
+            elemento = get_val(linha, mapa_colunas.get("elemento"))
             
-            # Se a coluna Elemento também estiver vazia, tenta descobrir da "Dotação" da linha
-            if not elemento and col_dot_idx != -1 and col_dot_idx < len(linha):
-                # Na planilha do usuario, "Dotação" pode não ser a dot_completa. Se ele salvou dot.completa num bloco, extraímos.
-                elemento = extrair_elemento(str(linha[col_dot_idx]))
+            # Se a coluna Elemento estiver vazia, tenta extrair da Dotação
+            if not elemento:
+                dotacao = get_val(linha, mapa_colunas.get("dotacao"))
+                elemento = extrair_elemento(dotacao)
                 
-            if not descricao: continue
+            if not descricao: 
+                continue
             
             codigo_sub, nome_sub, score = "", "", 0
             
-            # Repete lógica do extrator
             if elemento in SUBELEMENTOS_FIXOS:
                 codigo_sub, nome_sub = SUBELEMENTOS_FIXOS[elemento]
                 score = 1.0
@@ -422,11 +446,9 @@ def atualizar_subelementos_vazios(df_dotacao, df_keywords):
                 
             # Se achou um subelemento com o previsor
             if codigo_sub:
-                # Row na API A1 é 1-indexed. O cabeçalho é row 1.
                 row_no_sheets = i + 1 
+                linhas_corrigidas += 1
                 
-                # Monta a att (Coluna (letra) e Row) => Exemplo: col 6 => 'F' + str(row_no_sheets)
-                # Como get_all_values retorna index 0-based, podemos usar isso para converter em letras.
                 def col_index_to_letter(col_idx):
                     letter = ''
                     temp = col_idx
@@ -438,20 +460,18 @@ def atualizar_subelementos_vazios(df_dotacao, df_keywords):
                 celula_sub = f"{col_index_to_letter(col_sub_idx)}{row_no_sheets}"
                 atualizacoes.append({"range": celula_sub, "values": [[str(codigo_sub)]]})
                 
-                if col_nomesub_idx is not None:
-                    celula_nome = f"{col_index_to_letter(col_nomesub_idx)}{row_no_sheets}"
+                if "descricao_subelemento" in mapa_colunas:
+                    celula_nome = f"{col_index_to_letter(mapa_colunas['descricao_subelemento'])}{row_no_sheets}"
                     atualizacoes.append({"range": celula_nome, "values": [[str(nome_sub)]]})
                 
-                if col_conf_idx is not None:
-                    celula_conf = f"{col_index_to_letter(col_conf_idx)}{row_no_sheets}"
+                if "confiabilidade" in mapa_colunas:
+                    celula_conf = f"{col_index_to_letter(mapa_colunas['confiabilidade'])}{row_no_sheets}"
                     atualizacoes.append({"range": celula_conf, "values": [[str(round(score, 2))]]})
 
-    qtd_corrigidos = 0
     if atualizacoes:
         ws.batch_update(atualizacoes, value_input_option="USER_ENTERED")
-        qtd_corrigidos = len(atualizacoes) // 3 # Divide por 3 colunas que alteramos por linha (Sub, NomeSub, Conf)
         
-    return total_celulas_verificadas, qtd_corrigidos
+    return total_celulas_verificadas, linhas_corrigidas
 
 
 def gravar_aba_empenhar(df_selecionados):
@@ -710,6 +730,7 @@ if fonte_sel == "COM/LIC (Pendentes)":
             else:
                 st.sidebar.success(f"🎉 {corrigidos} de {vazios} Subelementos vazios foram atualizados direto na planilha!")
                 st.cache_data.clear() # Limpa o cache
+                st.session_state["df_para_empenhar"] = carregar_pendentes_comlic()
                 st.rerun() # Atualiza a tela pra exibir tudo
 
 

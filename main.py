@@ -272,13 +272,16 @@ def executar_empenhos(page, spreadsheet):
                 elif status == "COMPRA_DIRETA_NAO_ENCONTRADA":
                     msg = "Compra Direta não encontrada"
                     status = "ERRO"
+                elif status == "DIVERGENCIA_VALOR":
+                    msg = info or "Divergência de valor entre sistema e planilha"
+                    status = "ERRO_VALOR_DIVERGENTE"
                 else:
                     msg = f"Retorno inesperado: {resultado}"
                     status = "RETORNO_DESCONHECIDO"
 
                 registrar_resultado(df, idx, status, msg)
-                df.loc[idx, "EMPENHO_EXISTENTE"] = info or ""
-                atualizar_status_origem(spreadsheet, row, status, msg, info)
+                df.loc[idx, "EMPENHO_EXISTENTE"] = info if status == "SUCESSO" else ""
+                atualizar_status_origem(spreadsheet, row, status, msg, info if status == "SUCESSO" else None)
 
             # 📂 EMPENHO DOTAÇÃO
             elif tem_dotacao and not tem_oc:
@@ -288,12 +291,26 @@ def executar_empenhos(page, spreadsheet):
                     pagina_atual = "empenho"
 
                 log.info("📂 Tipo: DOTAÇÃO")
-                status, info = preencher_empenho_dotacao(page, row, DRY_RUN)
-                msg = "Empenho por dotação realizado com sucesso"
+                resultado = preencher_empenho_dotacao(page, row, DRY_RUN)
+                if isinstance(resultado, tuple):
+                    status, info = resultado
+                else:
+                    status, info = resultado, None
+
+                log.info(f"🎯 Status Dotação: {status} | Info: {info}")
+
+                if status == "SUCESSO":
+                    msg = "Empenho por dotação realizado com sucesso"
+                elif status == "DIVERGENCIA_VALOR":
+                    msg = info or "Divergência de valor entre sistema e planilha"
+                    status = "ERRO_VALOR_DIVERGENTE"
+                else:
+                    msg = info or f"Status: {status}"
+
                 registrar_resultado(df, idx, status, msg)
-                if info:
+                if info and status == "SUCESSO":
                     df.loc[idx, "EMPENHO_EXISTENTE"] = info
-                atualizar_status_origem(spreadsheet, row, status, msg, info)
+                atualizar_status_origem(spreadsheet, row, status, msg, info if status == "SUCESSO" else None)
 
             elif tem_oc and tem_dotacao:
                 msg = "Linha possui OC e DOTACAO preenchidos ao mesmo tempo"

@@ -1,3 +1,109 @@
+def converter_para_float(valor):
+    """
+    Converte com segurança qualquer representação de valor (int, float, str BR ou US) para float.
+    Retorna float ou None se não for conversível/vazio.
+    """
+    if valor is None or pd.isna(valor):
+        return None
+    if isinstance(valor, (int, float)):
+        return float(valor)
+    
+    val_str = str(valor).strip()
+    if not val_str or val_str.lower() in ("nan", "none", ""):
+        return None
+        
+    try:
+        if "." in val_str and "," in val_str:
+            if val_str.index(".") < val_str.index(","):
+                # Formato BR: 1.500,50
+                val_limpo = val_str.replace(".", "").replace(",", ".")
+            else:
+                # Formato US: 1,500.50
+                val_limpo = val_str.replace(",", "")
+            return float(val_limpo)
+        elif "," in val_str:
+            # Formato BR sem ponto de milhar: 1500,50
+            return float(val_str.replace(",", "."))
+        else:
+            # Formato padrão/US: 1500.50 ou 1500
+            return float(val_str)
+    except (ValueError, TypeError):
+        return None
+
+
+def ler_valor_campo_empenho(page):
+    """
+    Lê o valor numérico atualmente presente no campo 'Valor' da tela de Empenho.
+    Retorna o valor como float (ex: 1500.50) ou None em caso de erro.
+    """
+    try:
+        campo = (
+            page.locator("label:has-text('Valor:')")
+            .locator("xpath=following-sibling::div")
+            .locator("input.dx-texteditor-input")
+            .first
+        )
+        if not campo.is_visible(timeout=3000):
+            return None
+            
+        val_str = campo.evaluate("""el => {
+            if (!el) return '';
+            try {
+                const dxEl = el.closest('.dx-numberbox');
+                if (dxEl) {
+                    const instance = DevExpress.ui.dxNumberBox.getInstance(dxEl);
+                    if (instance && instance.option('value') !== undefined && instance.option('value') !== null) {
+                        return instance.option('value').toString();
+                    }
+                }
+            } catch(e) {}
+            return el.value || el.getAttribute('aria-valuenow') || '';
+        }""")
+        
+        return converter_para_float(val_str)
+    except Exception as e:
+        print(f"⚠️ Erro ao ler valor do campo 'Valor': {e}")
+        return None
+
+
+def validar_valor_empenho(page, valor_planilha_raw, tipo_empenho="DOTAÇÃO"):
+    """
+    Valida se o valor presente no campo 'Valor' do sistema é exatamente igual
+    ao valor fornecido na planilha (diferença <= 0.01 centavo).
+    Impede o empenho de valores menores ou maiores do que os da planilha.
+    Retorna (True, None) se estiver OK, ou (False, mensagem_erro) se divergente.
+    """
+    v_planilha = converter_para_float(valor_planilha_raw)
+    if v_planilha is None or v_planilha == 0:
+        print(f"⚠️ Aviso: Valor da planilha não informado ou é zero ({valor_planilha_raw}). Validação de valor ignorada.")
+        return True, None
+
+    v_sistema = ler_valor_campo_empenho(page)
+    if v_sistema is None:
+        page.wait_for_timeout(500)
+        v_sistema = ler_valor_campo_empenho(page)
+
+    print(f"🔍 Validação de Valor [{tipo_empenho}]: Planilha = R$ {v_planilha:.2f} | Sistema = R$ {v_sistema if v_sistema is not None else 'N/A'}")
+
+    if v_sistema is None:
+        msg = f"Não foi possível ler o valor no sistema (Planilha pede R$ {v_planilha:.2f})"
+        print(f"❌ {msg}")
+        return False, msg
+
+    diff = abs(v_sistema - v_planilha)
+    if diff > 0.01:
+        if v_sistema < v_planilha:
+            msg = f"Valor no sistema (R$ {v_sistema:.2f}) é MENOR do que o valor da planilha (R$ {v_planilha:.2f})"
+        else:
+            msg = f"Valor no sistema (R$ {v_sistema:.2f}) é MAIOR do que o valor da planilha (R$ {v_planilha:.2f})"
+        
+        print(f"❌ DIVERGÊNCIA DE VALOR ENCONTRADA: {msg}")
+        return False, msg
+
+    print(f"✅ Valor validado com sucesso! (Planilha R$ {v_planilha:.2f} == Sistema R$ {v_sistema:.2f})")
+    return True, None
+
+
 def preencher_input(page, rotulo, valor):
     campo = (
         page.locator(f"label:has-text('{rotulo}')")
@@ -19,15 +125,7 @@ def preencher_valor_dotacao(page, valor, timeout=15000):
       - Vírgula pode ser ignorada  → '84,96' vira 8496
     Solução: usar DevExtreme JS API para setar o valor como float diretamente.
     """
-    # Converte qualquer formato ('84,96' / '84.96' / 84.96) para float puro
-    # Converte qualquer formato ('84,96' / '84.96' / 84.96) para float puro e cria string BR
-    try:
-        if isinstance(valor, str):
-            valor_float = float(valor.replace(".", "").replace(",", "."))
-        else:
-            valor_float = float(valor)
-    except (ValueError, TypeError):
-        valor_float = None
+    valor_float = converter_para_float(valor)
     # Formata para o padrão brasileiro com vírgula, se possível
     if valor_float is not None:
         valor_br = f"{valor_float:.2f}".replace(".", ",")

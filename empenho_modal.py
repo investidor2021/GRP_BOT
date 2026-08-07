@@ -1,6 +1,6 @@
 from campos import preencher_input, preencher_valor_dotacao, preencher_combo, registrar_resultado, selecionar_combo_habilitado, preencher_textarea, preencher_numero, preencher_ordem_compra, abrir_novo_empenho,normalizar_numero_excel,normalizar_valor_excel
 from campos import preencher_data_se_existir,normalizar_subelemento, verificar_oc_sem_saldo_e_abortar, fechar_empenho_e_voltar
-from campos import tratar_oc_ja_empenhada, normalizar_subelemento2, verificar_compra_direta_nao_encontrada, finalizar_empenho, tratar_popup_impressao_empenho, tratar_popup_aditamento
+from campos import tratar_oc_ja_empenhada, normalizar_subelemento2, verificar_compra_direta_nao_encontrada, finalizar_empenho, tratar_popup_impressao_empenho, tratar_popup_aditamento, validar_valor_empenho
 
 
 
@@ -36,6 +36,13 @@ def preencher_empenho_dotacao(page, row, dry_run=False):
     data_valor = row.get("DATA") or row.get("Data") or row.get("data")
     preencher_data_se_existir(page, data_valor)
     preencher_valor_dotacao(page, normalizar_valor_excel(row["VALOR"]))
+
+    # 🚨 VALIDAÇÃO DE VALOR (NÃO EMPENHAR SE FOR MENOR OU MAIOR)
+    valido, msg_erro = validar_valor_empenho(page, row["VALOR"], "DOTAÇÃO")
+    if not valido:
+        fechar_empenho_e_voltar(page)
+        return "DIVERGENCIA_VALOR", msg_erro
+
     preencher_textarea(page, "Histórico", row["HISTORICO"])
 
    # aqui é onde a mágica acontece
@@ -75,7 +82,14 @@ def preencher_empenho_oc(page, row, registro):
     #page.keyboard.press("Tab")
     data_valor = row.get("DATA") or row.get("Data") or row.get("data")
     preencher_data_se_existir(page, data_valor)
-    #preencher_numero(page, "Valor", (normalizar_valor_excel(row["VALOR"])))
+    
+    # 🚨 VALIDAÇÃO DE VALOR (NÃO EMPENHAR SE FOR MENOR OU MAIOR)
+    valor_planilha = row.get("VALOR") or row.get("Valor") or row.get("valor")
+    if valor_planilha is not None and str(valor_planilha).strip() not in ("", "nan", "None"):
+        valido, msg_erro = validar_valor_empenho(page, valor_planilha, "OC")
+        if not valido:
+            fechar_empenho_e_voltar(page)
+            return "DIVERGENCIA_VALOR", msg_erro
 
     numero_empenho = finalizar_empenho(page)
     print("📦 Retornando para o main o empenho:", numero_empenho)
