@@ -8,12 +8,14 @@ import pdfplumber
 log = logging.getLogger(__name__)
 
 COLUNAS_PLANILHA_TRANSFERENCIA = [
-    "FICHA_SAIDA",       # Ficha de onde sairá o recurso (saldo positivo)
-    "FICHA_ENTRADA",     # Ficha para onde entrará o recurso (saldo negativo a regularizar)
-    "FONTE_RECURSO",     # Fonte de Recurso (obrigatório bater exatamente)
-    "COD_APLICACAO",     # Código de Aplicação (obrigatório bater exatamente)
-    "VALOR",             # Valor da transferência
-    "HISTORICO_CUSTOM",  # Histórico específico (opcional)
+    "FICHA",             # Ficha Financeira / Conta Bancária (A mesma para Entrada e Saída)
+    "FICHA_SAIDA",       # Ficha de Saída (mesma ficha)
+    "FICHA_ENTRADA",     # Ficha de Entrada (mesma ficha)
+    "FONTE_RECURSO",     # Fonte de Recurso da Conta
+    "COD_APLICACAO_SAIDA",   # Código de Aplicação DÉBITO (Saldo Positivo)
+    "COD_APLICACAO_ENTRADA", # Código de Aplicação CRÉDITO (Saldo Negativo)
+    "VALOR",             # Valor da transferência de compensação
+    "HISTORICO_CUSTOM",  # Histórico específico
     "STATUS",            # PENDENTE, SUCESSO, ERRO
     "MENSAGEM"           # Log do resultado do robô
 ]
@@ -67,11 +69,10 @@ def extrair_dados_demonstrativo_pdf(caminho_pdf):
                     valores_str = match_app.group(2).strip().split()
                     
                     if len(valores_str) >= 2:
-                        # Em relatórios standard, os últimos valores são: Saldo Final Aplicação, Saldo Final Conta Corrente, Saldo Geral
                         saldo_cc = converter_valor_br(valores_str[-2])
                         saldo_geral = converter_valor_br(valores_str[-1])
                         
-                        # Usa o saldo da conta corrente ou saldo geral para aferir o saldo negativo
+                        # Usa o saldo da conta corrente ou saldo geral para aferir o saldo negativo/positivo
                         saldo_final = saldo_cc if saldo_cc != 0 else saldo_geral
 
                         registros.append({
@@ -91,21 +92,25 @@ def gerar_modelo_planilha(caminho_arquivo="planilha_transferencias_audesp.xlsx")
     """
     dados_exemplo = [
         {
-            "FICHA_SAIDA": "608",
-            "FICHA_ENTRADA": "611",
+            "FICHA": "1268",
+            "FICHA_SAIDA": "1268",
+            "FICHA_ENTRADA": "1268",
             "FONTE_RECURSO": "1 - Tesouro",
-            "COD_APLICACAO": "110.0000 - GERAL",
-            "VALOR": 450.00,
+            "COD_APLICACAO_SAIDA": "111.0000 - REMUNERAÇÃO DE APLICAÇÕES FINANCEIRAS",
+            "COD_APLICACAO_ENTRADA": "110.0000 - GERAL",
+            "VALOR": 4045.65,
             "HISTORICO_CUSTOM": "",
             "STATUS": "PENDENTE",
             "MENSAGEM": ""
         },
         {
-            "FICHA_SAIDA": "617",
-            "FICHA_ENTRADA": "635",
+            "FICHA": "1490",
+            "FICHA_SAIDA": "1490",
+            "FICHA_ENTRADA": "1490",
             "FONTE_RECURSO": "1 - Tesouro",
-            "COD_APLICACAO": "110.0000 - GERAL",
-            "VALOR": 27729.15,
+            "COD_APLICACAO_SAIDA": "111.0000 - REMUNERAÇÃO DE APLICAÇÕES FINANCEIRAS",
+            "COD_APLICACAO_ENTRADA": "110.0000 - GERAL",
+            "VALOR": 1149.04,
             "HISTORICO_CUSTOM": "",
             "STATUS": "PENDENTE",
             "MENSAGEM": ""
@@ -118,24 +123,26 @@ def gerar_modelo_planilha(caminho_arquivo="planilha_transferencias_audesp.xlsx")
 
 def montar_planilha_compensacao_audesp(df_balancos):
     """
-    Agrupa os saldos por Fonte de Recurso e Código de Aplicação.
-    Monta pares de transferência de contas com saldo positivo para regularizar contas negativas.
-    Garante ESTRITAMENTE que não misture fontes nem códigos de aplicação.
+    Agrupa os saldos ESTRITAMENTE POR FICHA (e Fonte de Recurso).
+    Garante que a Ficha de Entrada e a Ficha de Saída sejam A MESMA FICHA (mesma conta bancária/financeira).
+    Compensa os saldos negativos daquela Ficha utilizando os saldos positivos disponíveis na MESMA Ficha.
     """
     transferencias = []
 
-    grupos = df_balancos.groupby(["FONTE_RECURSO", "COD_APLICACAO"])
+    # O agrupamento principal É A FICHA (e a Fonte de Recurso da Ficha)
+    grupos = df_balancos.groupby(["FICHA", "FONTE_RECURSO"])
 
-    for (fonte, cod_app), grupo in grupos:
+    for (ficha, fonte), grupo in grupos:
+        ficha_str = str(ficha).strip()
         negativos = grupo[grupo["SALDO"] < 0].copy()
         positivos = grupo[grupo["SALDO"] > 0].copy()
 
-        if negativos.empty:
+        if negativos.empty or positivos.empty:
             continue
 
         for idx_neg, row_neg in negativos.iterrows():
             valor_necessario = abs(row_neg["SALDO"])
-            ficha_entrada = str(row_neg["FICHA"]).strip()
+            cod_app_entrada = str(row_neg["COD_APLICACAO"]).strip()
 
             for idx_pos, row_pos in positivos.iterrows():
                 if valor_necessario <= 0:
@@ -146,13 +153,15 @@ def montar_planilha_compensacao_audesp(df_balancos):
                     continue
 
                 valor_transf = min(disponivel, valor_necessario)
-                ficha_saida = str(row_pos["FICHA"]).strip()
+                cod_app_saida = str(row_pos["COD_APLICACAO"]).strip()
 
                 transferencias.append({
-                    "FICHA_SAIDA": ficha_saida,
-                    "FICHA_ENTRADA": ficha_entrada,
+                    "FICHA": ficha_str,
+                    "FICHA_SAIDA": ficha_str,       # MESMA FICHA!
+                    "FICHA_ENTRADA": ficha_str,     # MESMA FICHA!
                     "FONTE_RECURSO": fonte,
-                    "COD_APLICACAO": cod_app,
+                    "COD_APLICACAO_SAIDA": cod_app_saida,
+                    "COD_APLICACAO_ENTRADA": cod_app_entrada,
                     "VALOR": round(valor_transf, 2),
                     "HISTORICO_CUSTOM": "",
                     "STATUS": "PENDENTE",
@@ -162,4 +171,6 @@ def montar_planilha_compensacao_audesp(df_balancos):
                 valor_necessario -= valor_transf
                 positivos.at[idx_pos, "SALDO"] = disponivel - valor_transf
 
-    return pd.DataFrame(transferencias, columns=COLUNAS_PLANILHA_TRANSFERENCIA)
+    df_resultado = pd.DataFrame(transferencias, columns=COLUNAS_PLANILHA_TRANSFERENCIA)
+    log.info(f"Gerados {len(df_resultado)} lançamentos de compensação na MESMA FICHA.")
+    return df_resultado

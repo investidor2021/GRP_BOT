@@ -33,18 +33,19 @@ def preencher_transferencia_item(page, data_transf, historico_global, item_trans
     """
     Realiza o lançamento completo de uma transferência financeira no GRP:
     1. Preenche o cabeçalho (Data, Histórico Geral).
-    2. Aba 'Entradas': Ficha Entrada, Fonte, 'Crédito em Conta', Valor, Histórico e 'Aplicar'.
-    3. Aba 'Saídas': Ficha Saída, Fonte, 'Débito em Conta', Valor, Histórico e 'Aplicar'.
+    2. Aba 'Entradas': Ficha (Entrada), Fonte, 'Crédito em Conta', Valor, Histórico e 'Aplicar'.
+    3. Aba 'Saídas': Ficha (Saída - MESMA FICHA), Fonte, 'Débito em Conta', Valor, Histórico e 'Aplicar'.
     4. Clica em 'Salvar/Fechar'.
     """
-    ficha_entrada = str(item_transf.get("FICHA_ENTRADA", "")).strip()
-    ficha_saida = str(item_transf.get("FICHA_SAIDA", "")).strip()
+    ficha_base = str(item_transf.get("FICHA", "")).strip()
+    ficha_entrada = str(item_transf.get("FICHA_ENTRADA") or ficha_base).strip()
+    ficha_saida = str(item_transf.get("FICHA_SAIDA") or ficha_base).strip()
     fonte_recurso = str(item_transf.get("FONTE_RECURSO", "")).strip()
     valor_transf = item_transf.get("VALOR", 0.0)
     hist_texto = str(item_transf.get("HISTORICO_CUSTOM") or historico_global).strip()
     val_str_formatado = f"{valor_transf:.2f}".replace(".", ",")
 
-    log.info(f"Iniciando ciclo de transferência: Saída Ficha {ficha_saida} (Débito) -> Entrada Ficha {ficha_entrada} (Crédito) | Valor R$ {val_str_formatado}")
+    log.info(f"Iniciando ciclo de transferência na FICHA {ficha_base}: Saída Ficha {ficha_saida} (Débito) -> Entrada Ficha {ficha_entrada} (Crédito) | Valor R$ {val_str_formatado}")
 
     # =============================================================
     # 1. Clica no botão "Novo"
@@ -82,7 +83,7 @@ def preencher_transferencia_item(page, data_transf, historico_global, item_trans
     page.wait_for_timeout(500)
 
     # =============================================================
-    # 4. ABA ENTRADAS (Crédito em Conta)
+    # 4. ABA ENTRADAS (Crédito em Conta na Ficha)
     # =============================================================
     log.info(f"Processando Entrada (Crédito) na Ficha {ficha_entrada}...")
     tab_entradas = page.locator("span:has-text('Entradas')").first
@@ -157,7 +158,7 @@ def preencher_transferencia_item(page, data_transf, historico_global, item_trans
     page.wait_for_timeout(1500)
 
     # =============================================================
-    # 5. ABA SAÍDAS (Débito em Conta)
+    # 5. ABA SAÍDAS (Débito em Conta na MESMA Ficha)
     # =============================================================
     log.info(f"Processando Saída (Débito) na Ficha {ficha_saida}...")
     tab_saidas = page.locator("span:has-text('Saídas')").first
@@ -171,7 +172,7 @@ def preencher_transferencia_item(page, data_transf, historico_global, item_trans
     btn_add_out.click(force=True)
     page.wait_for_timeout(1200)
 
-    # Ficha Saída
+    # Ficha Saída (A MESMA FICHA!)
     campo_ficha_out = page.locator("label:has-text('Ficha:')").locator("..").locator("input.dx-texteditor-input[role='spinbutton']").first
     if not campo_ficha_out.is_visible():
         campo_ficha_out = page.locator("dx-number-box input[role='spinbutton']").first
@@ -240,5 +241,5 @@ def preencher_transferencia_item(page, data_transf, historico_global, item_trans
     btn_salvar_fechar.click(force=True)
     page.wait_for_timeout(2500)
 
-    log.info(f"✅ Ciclo de transferência finalizado com sucesso! (Entrada Ficha {ficha_entrada} | Saída Ficha {ficha_saida})")
+    log.info(f"✅ Ciclo de transferência finalizado com sucesso na Ficha {ficha_base}!")
     return True
