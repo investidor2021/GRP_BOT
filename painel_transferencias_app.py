@@ -16,6 +16,25 @@ from organizador_transferencias import (
 )
 from main_transferencia import executar_robo_transferencias
 
+@st.cache_data(show_spinner="Processando PDF do Demonstrativo...")
+def processar_pdf_cached(pdf_bytes, caminho_temp_pdf):
+    """Salva o PDF e monta a planilha de compensação. Cacheado pelo conteúdo do arquivo,
+    então não reprocessa a cada rerun do Streamlit (ex: ao digitar usuário/senha)."""
+    with open(caminho_temp_pdf, "wb") as f:
+        f.write(pdf_bytes)
+    df_extraido = extrair_dados_demonstrativo_pdf(caminho_temp_pdf)
+    if df_extraido.empty:
+        return df_extraido
+    return montar_planilha_compensacao_audesp(df_extraido)
+
+@st.cache_data(show_spinner="Lendo planilha...")
+def ler_planilha_cached(arquivo_bytes, nome_arquivo):
+    """Lê a planilha/CSV enviada. Cacheado pelo conteúdo do arquivo."""
+    import io
+    if nome_arquivo.endswith(".csv"):
+        return pd.read_csv(io.BytesIO(arquivo_bytes))
+    return pd.read_excel(io.BytesIO(arquivo_bytes))
+
 st.set_page_config(
     page_title="Robô GRP - Transferências Financeiras AUDESP",
     page_icon="🏦",
@@ -57,13 +76,10 @@ with tab_pdf:
     
     if pdf_file is not None:
         caminho_temp_pdf = os.path.join(os.path.dirname(__file__), "temp_demonstrativo.pdf")
-        with open(caminho_temp_pdf, "wb") as f:
-            f.write(pdf_file.getbuffer())
-        
-        # CÁLCULO AUTOMÁTICO SEM BOTÃO
-        df_pdf_extraido = extrair_dados_demonstrativo_pdf(caminho_temp_pdf)
-        if not df_pdf_extraido.empty:
-            df_gerado_pdf = montar_planilha_compensacao_audesp(df_pdf_extraido)
+
+        # CÁLCULO AUTOMÁTICO SEM BOTÃO (cacheado pelo conteúdo do PDF)
+        df_gerado_pdf = processar_pdf_cached(pdf_file.getvalue(), caminho_temp_pdf)
+        if not df_gerado_pdf.empty:
             st.session_state["df_transferencias"] = df_gerado_pdf
             st.success(f"✅ Cálculo Automático Concluído! {len(df_gerado_pdf)} lançamentos gerados para as fichas com saldos negativos.")
 
@@ -83,10 +99,7 @@ with tab_planilha:
     
     uploaded_file = st.file_uploader("Carregar Planilha de Transferências (.xlsx ou .csv)", type=["xlsx", "csv"], key="excel_uploader")
     if uploaded_file is not None:
-        if uploaded_file.name.endswith(".csv"):
-            st.session_state["df_transferencias"] = pd.read_csv(uploaded_file)
-        else:
-            st.session_state["df_transferencias"] = pd.read_excel(uploaded_file)
+        st.session_state["df_transferencias"] = ler_planilha_cached(uploaded_file.getvalue(), uploaded_file.name)
 
 with tab_manual:
     exemplo_df = pd.DataFrame([
