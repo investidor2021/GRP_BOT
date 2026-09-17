@@ -9,6 +9,13 @@ from login import login_grp
 from transferencia_modal import ir_para_transferencia_financeira, preencher_documento_transferencia_ficha
 from organizador_transferencias import COLUNAS_PLANILHA_TRANSFERENCIA
 
+# No Windows, o console/subprocesso costuma usar cp1252, que não sabe representar
+# emojis (❌, ✅) usados nas mensagens de log. Sem isso, o logging quebra com
+# UnicodeEncodeError e o log real fica escondido atrás do erro de codificação.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 LOG_PATH = os.path.join(os.path.dirname(__file__), "transferencia_robo.log")
 logging.basicConfig(
     level=logging.INFO,
@@ -29,6 +36,11 @@ def executar_robo_transferencias(usuario, senha, historico_global, data_transfer
         raise FileNotFoundError(f"Arquivo de planilha não encontrado: {caminho_planilha}")
 
     df = pd.read_excel(caminho_planilha)
+    # STATUS/MENSAGEM podem vir vazias (NaN) do Excel e o pandas infere dtype float64,
+    # o que quebra ao tentar gravar texto nelas depois. Força para texto desde já.
+    for col in ("STATUS", "MENSAGEM"):
+        if col in df.columns:
+            df[col] = df[col].astype(object)
     log.info(f"Lidas {len(df)} linhas da planilha '{caminho_planilha}'")
 
     if df.empty:
@@ -75,6 +87,15 @@ def executar_robo_transferencias(usuario, senha, historico_global, data_transfer
                 df.loc[idxs, "STATUS"] = "ERRO"
                 df.loc[idxs, "MENSAGEM"] = str(ex_ficha)
                 log.error(f"❌ Erro ao processar Ficha {ficha}: {ex_ficha}")
+
+                # Se a Ficha falhou no meio do preenchimento, o documento pode ter ficado
+                # aberto na tela, escondendo o botão "Novo" e travando todas as próximas
+                # Fichas. Renavega para a tela de Transferência Financeira para recuperar.
+                try:
+                    log.info("Recuperando a tela de Transferência Financeira para continuar com as próximas Fichas...")
+                    ir_para_transferencia_financeira(page)
+                except Exception as ex_recuperacao:
+                    log.error(f"Falha ao recuperar a tela após erro na Ficha {ficha}: {ex_recuperacao}")
 
             # Salva o progresso no arquivo Excel
             df.to_excel(caminho_planilha, index=False)
