@@ -24,7 +24,7 @@ st.set_page_config(
 st.title("🏦 Robô de Transferência Financeira GRP (Validação AUDESP)")
 st.markdown("""
 Este robô compensa **saldos negativos contra positivos** dentro da **mesma Ficha (conta)** para aprovação na validação AUDESP.
-> ⚡ **Processamento Automático:** Ao enviar o PDF, o sistema calcula as fichas com saldos negativos e organiza 1 linha de Entrada (Valor Cheio) com suas linhas de Saída vinculadas.
+> ⚡ **Processamento Automático:** Ao enviar o PDF, o sistema calcula as fichas com saldos negativos e exibe quadros visualmente mesclados com o valor cheio e suas saídas correspondentes à frente.
 """)
 
 st.sidebar.header("🔑 Credenciais e Parâmetros")
@@ -95,16 +95,75 @@ with tab_manual:
         {"FICHA": "1240", "FONTE_RECURSO": "1 - Tesouro", "COD_APLICACAO": "220.0000 - ENSINO FUNDAMENTAL", "SALDO": 1647335.60},
         {"FICHA": "1240", "FONTE_RECURSO": "1 - Tesouro", "COD_APLICACAO": "221.0000 - REMUNERAÇÃO DE APLICAÇÕES", "SALDO": 46380.39},
     ])
-    df_saldos_input = st.dataframe(exemplo_df, use_container_width=True)
+    st.dataframe(exemplo_df, use_container_width=True)
 
     if st.button("⚡ Calcular Pareamento Manual"):
         df_gerado_man = montar_planilha_compensacao_audesp(exemplo_df)
         st.session_state["df_transferencias"] = df_gerado_man
         st.success(f"Foram geradas {len(df_gerado_man)} operações de transferência para as fichas com saldos negativos!")
 
+def gerar_html_tabela_quadro_ficha(df_ficha):
+    """
+    Gera uma tabela HTML estilizada em quadros com células mescladas (rowspan)
+    onde o quadro de Entrada fica maior cobrindo as N linhas de Saída à frente.
+    """
+    html = """
+    <table style="width:100%; border-collapse: collapse; margin-bottom: 20px; font-family: sans-serif; font-size: 13px;">
+      <thead>
+        <tr style="background-color: #f1f5f9; text-align: left; color: #0f172a;">
+          <th style="padding: 10px; border: 1px solid #cbd5e1; width: 40%;">📥 Entrada (Crédito - Valor Cheio)</th>
+          <th style="padding: 10px; border: 1px solid #cbd5e1; width: 40%;">📤 Saídas Vinculadas à Frente (Débito)</th>
+          <th style="padding: 10px; border: 1px solid #cbd5e1; width: 12%;">Valor Parcela</th>
+          <th style="padding: 10px; border: 1px solid #cbd5e1; width: 8%;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+    """
+    df_entradas = df_ficha[df_ficha["TIPO_ITEM"] == "ENTRADA"]
+    cods_entradas_unicos = df_entradas["COD_APLICACAO"].unique()
+
+    for cod_e in cods_entradas_unicos:
+        sub_e = df_entradas[df_entradas["COD_APLICACAO"] == cod_e]
+        val_cheio = sub_e["VALOR_TOTAL_NEGATIVO"].iloc[0] if "VALOR_TOTAL_NEGATIVO" in sub_e.columns else sub_e["VALOR"].sum()
+        str_cheio = f"R$ {val_cheio:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+        df_saidas_vinculadas = df_ficha[
+            (df_ficha["TIPO_ITEM"] == "SAIDA") & 
+            (df_ficha["COD_APLICACAO_PARCEIRO"] == cod_e)
+        ]
+
+        num_saidas = len(df_saidas_vinculadas)
+        if num_saidas == 0:
+            continue
+
+        first = True
+        for idx_s, row_s in df_saidas_vinculadas.iterrows():
+            val_p = f"R$ {row_s['VALOR']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            st_color = "#16a34a" if str(row_s.get("STATUS")).upper() == "SUCESSO" else "#64748b"
+
+            html += "<tr>"
+            if first:
+                html += f"""
+                <td rowspan="{num_saidas}" style="padding: 12px; border: 1px solid #cbd5e1; vertical-align: middle; background-color: #f0f9ff; color: #0369a1;">
+                  <div style="font-weight: 700; font-size: 13.5px; color: #0369a1;">{cod_e}</div>
+                  <div style="font-size: 15px; font-weight: bold; color: #0284c7; margin-top: 6px;">{str_cheio}</div>
+                  <div style="font-size: 11px; color: #0e7490; margin-top: 2px;">(Valor Cheio a Zerar)</div>
+                </td>
+                """
+                first = False
+
+            html += f"""
+                <td style="padding: 10px; border: 1px solid #cbd5e1; background-color: #ffffff; color: #334155;">{row_s['COD_APLICACAO']}</td>
+                <td style="padding: 10px; border: 1px solid #cbd5e1; background-color: #ffffff; font-weight: 600; color: #0f172a;">{val_p}</td>
+                <td style="padding: 10px; border: 1px solid #cbd5e1; background-color: #ffffff; color: {st_color}; font-weight: 600;">{row_s.get('STATUS', 'PENDENTE')}</td>
+              </tr>
+            """
+
+    html += "</tbody></table>"
+    return html
+
 # =========================================================================
-# VISUALIZAÇÃO HIERÁRQUICA E SOMENTE LEITURA (NÃO EDITÁVEL)
-# 1 LINHA DE ENTRADA (VALOR CHEIO) E AS LINHAS DE SAÍDA VINCULADAS
+# VISUALIZAÇÃO EM QUADROS COM CÉLULAS MESCLADAS (ROWSPAN) POR FICHA
 # =========================================================================
 if "df_transferencias" in st.session_state and not st.session_state["df_transferencias"].empty:
     df_transf = st.session_state["df_transferencias"]
@@ -114,7 +173,7 @@ if "df_transferencias" in st.session_state and not st.session_state["df_transfer
     df_transf.to_excel(caminho_salvar, index=False)
 
     st.markdown("---")
-    st.header("📊 2. Resumo de Transferências por Conta (Somente Leitura)")
+    st.header("📊 2. Quadros de Transferências por Conta (Células Mescladas)")
 
     tot_fichas = df_transf["FICHA"].nunique()
     tot_entradas = df_transf[df_transf["TIPO_ITEM"] == "ENTRADA"]["VALOR"].sum()
@@ -125,7 +184,7 @@ if "df_transferencias" in st.session_state and not st.session_state["df_transfer
     m2.metric("Total Geral de Entradas (Crédito)", f"R$ {tot_entradas:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
     m3.metric("Total Geral de Saídas (Débito)", f"R$ {tot_saidas:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
-    st.markdown("### 🏦 Estrutura de Lançamento por Ficha (1 Entrada -> N Saídas Vinculadas)")
+    st.markdown("### 🏦 Quadros de Pareamento (Entrada Mesclada <-> Saídas a Frente)")
 
     grupos_ficha = df_transf.groupby("FICHA")
 
@@ -138,37 +197,8 @@ if "df_transferencias" in st.session_state and not st.session_state["df_transfer
         str_out = f"R$ {val_out:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
         with st.expander(f"🏦 **FICHA {ficha}** | Fonte: {fonte_desc} | Total Crédito: {str_in} | Total Débito: {str_out}", expanded=True):
-            
-            # Filtra as Entradas únicas dessa Ficha
-            df_entradas = df_ficha[df_ficha["TIPO_ITEM"] == "ENTRADA"]
-            cods_entradas_unicos = df_entradas["COD_APLICACAO"].unique()
-
-            for cod_e in cods_entradas_unicos:
-                sub_e = df_entradas[df_entradas["COD_APLICACAO"] == cod_e]
-                val_cheio = sub_e["VALOR_TOTAL_NEGATIVO"].iloc[0] if "VALOR_TOTAL_NEGATIVO" in sub_e.columns else sub_e["VALOR"].sum()
-                str_cheio = f"R$ {val_cheio:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-                # 1 LINHA DE CABEÇALHO PARA A ENTRADA COM VALOR CHEIO
-                st.markdown(f"#### 📥 **Entrada (Crédito):** `{cod_e}` &nbsp;|&nbsp; **Valor Cheio a Zerar:** `{str_cheio}`")
-
-                # LINHAS DE SAÍDA VINCULADAS A ESSA ENTRADA ESPECÍFICA
-                # Na planilha, cada linha de Entrada tem sua contrapartida de Saída com o mesmo COD_APLICACAO_PARCEIRO ou pareada
-                df_saidas_vinculadas = df_ficha[
-                    (df_ficha["TIPO_ITEM"] == "SAIDA") & 
-                    (df_ficha["COD_APLICACAO_PARCEIRO"] == cod_e)
-                ]
-
-                if not df_saidas_vinculadas.empty:
-                    df_vis_saidas = pd.DataFrame({
-                        "📤 Cód. Aplicação Saída Vinculada (Débito)": df_saidas_vinculadas["COD_APLICACAO"],
-                        "Valor Parcela Débito": df_saidas_vinculadas["VALOR"].apply(lambda v: f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")),
-                        "Status Lançamento": df_saidas_vinculadas["STATUS"]
-                    })
-                    st.dataframe(df_vis_saidas, use_container_width=True, hide_index=True)
-                else:
-                    st.info("Nenhuma saída vinculada.")
-                
-                st.markdown("<hr style='margin: 8px 0; border: 0.5px dashed #ccc;'>", unsafe_allow_html=True)
+            html_quadro = gerar_html_tabela_quadro_ficha(df_ficha)
+            st.markdown(html_quadro, unsafe_allow_html=True)
 
     st.markdown("---")
     st.header("🤖 3. Execução do Robô Playwright")
