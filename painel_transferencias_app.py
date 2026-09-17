@@ -25,7 +25,7 @@ st.set_page_config(
 st.title("🏦 Robô de Transferência Financeira GRP (Validação AUDESP)")
 st.markdown("""
 Este robô compensa **saldos negativos contra positivos** dentro da **mesma Ficha (conta)** para aprovação na validação AUDESP.
-> ⚡ **Processamento Automático:** Ao enviar o PDF, o sistema calcula as fichas com saldos negativos e exibe quadros visualmente mesclados com o valor cheio e suas saídas correspondentes à frente.
+> ⚡ **Processamento Automático:** Ao enviar o PDF, o sistema calcula as fichas com saldos negativos (incluindo todos os itens da Ficha 1516) e exibe quadros visualmente mesclados com o valor cheio e suas saídas correspondentes à frente.
 """)
 
 st.sidebar.header("🔑 Credenciais e Parâmetros")
@@ -90,11 +90,9 @@ with tab_planilha:
 
 with tab_manual:
     exemplo_df = pd.DataFrame([
-        {"FICHA": "1240", "FONTE_RECURSO": "1 - Tesouro", "COD_APLICACAO": "110.0000 - GERAL", "SALDO": 71367.40},
-        {"FICHA": "1240", "FONTE_RECURSO": "1 - Tesouro", "COD_APLICACAO": "210.0000 - EDUCAÇÃO INFANTIL", "SALDO": -93832.32},
-        {"FICHA": "1240", "FONTE_RECURSO": "1 - Tesouro", "COD_APLICACAO": "212.0000 - EDUCAÇÃO INFANTIL - CRECHE", "SALDO": -77631.55},
-        {"FICHA": "1240", "FONTE_RECURSO": "1 - Tesouro", "COD_APLICACAO": "220.0000 - ENSINO FUNDAMENTAL", "SALDO": 1647335.60},
-        {"FICHA": "1240", "FONTE_RECURSO": "1 - Tesouro", "COD_APLICACAO": "221.0000 - REMUNERAÇÃO DE APLICAÇÕES", "SALDO": 46380.39},
+        {"FICHA": "1516", "FONTE_RECURSO": "1 - Tesouro", "COD_APLICACAO": "110.0000 - GERAL", "SALDO": 1903.38},
+        {"FICHA": "1516", "FONTE_RECURSO": "1 - Tesouro", "COD_APLICACAO": "110.0000 - GERAL", "SALDO": -897.88},
+        {"FICHA": "1516", "FONTE_RECURSO": "5 - VINCULADOS", "COD_APLICACAO": "800.0005 - Emenda Jonas Donizete", "SALDO": -1754.18},
     ])
     st.dataframe(exemplo_df, use_container_width=True)
 
@@ -106,16 +104,17 @@ with tab_manual:
 def gerar_html_tabela_quadro_ficha(df_ficha):
     """
     Gera uma tabela HTML estilizada em quadros com células mescladas (rowspan)
-    sem quebras de linha ou indentação que façam o Streamlit interpretar como código markdown.
+    onde o quadro de Entrada fica maior cobrindo as N linhas de Saída à frente.
+    Com colunas compactadas para exibição limpa.
     """
     parts = []
     parts.append('<div style="overflow-x: auto; border-radius: 8px; border: 1px solid #cbd5e1; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.04);">')
     parts.append('<table style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 13px;">')
     parts.append('<thead><tr style="background-color: #f8fafc; text-align: left; color: #1e293b; border-bottom: 2px solid #cbd5e1;">')
-    parts.append('<th style="padding: 12px; border-right: 1px solid #cbd5e1; width: 38%;">📥 Entrada (Crédito - Valor Cheio Negativo)</th>')
-    parts.append('<th style="padding: 12px; border-right: 1px solid #cbd5e1; width: 42%;">📤 Saídas Vinculadas à Frente (Débito)</th>')
-    parts.append('<th style="padding: 12px; border-right: 1px solid #cbd5e1; width: 12%;">Valor Parcela</th>')
-    parts.append('<th style="padding: 12px; width: 8%; text-align: center;">Status</th>')
+    parts.append('<th style="padding: 10px 12px; border-right: 1px solid #cbd5e1; width: 45%;">📥 Entrada (Crédito - Valor Cheio Negativo)</th>')
+    parts.append('<th style="padding: 10px 12px; border-right: 1px solid #cbd5e1; width: 30%;">📤 Saída Vinculada (Débito)</th>')
+    parts.append('<th style="padding: 10px 12px; border-right: 1px solid #cbd5e1; width: 15%;">Valor Parcela</th>')
+    parts.append('<th style="padding: 10px 12px; width: 10%; text-align: center;">Status</th>')
     parts.append('</tr></thead><tbody>')
 
     df_entradas = df_ficha[df_ficha["TIPO_ITEM"] == "ENTRADA"]
@@ -149,12 +148,17 @@ def gerar_html_tabela_quadro_ficha(df_ficha):
 
             bg_row = "#ffffff" if idx_s % 2 == 0 else "#f8fafc"
 
+            # Encurta a descrição da saída se for muito longa para manter a coluna compacta
+            cod_saida_str = str(row_s['COD_APLICACAO'])
+            if len(cod_saida_str) > 40:
+                cod_saida_str = cod_saida_str[:37] + "..."
+
             parts.append("<tr>")
             if first:
                 td_cell = (
-                    f'<td rowspan="{num_saidas}" style="padding: 14px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; vertical-align: middle; background-color: #f0f9ff; border-left: 4px solid #0284c7;">'
+                    f'<td rowspan="{num_saidas}" style="padding: 12px 14px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; vertical-align: middle; background-color: #f0f9ff; border-left: 4px solid #0284c7;">'
                     f'<div style="font-weight: 700; font-size: 13.5px; color: #0369a1;">{cod_e}</div>'
-                    f'<div style="font-size: 16px; font-weight: bold; color: #0284c7; margin-top: 6px;">{str_cheio}</div>'
+                    f'<div style="font-size: 15.5px; font-weight: bold; color: #0284c7; margin-top: 6px;">{str_cheio}</div>'
                     f'<div style="font-size: 11px; color: #0e7490; margin-top: 2px; font-style: italic;">(Valor Cheio Negativo a Zerar)</div>'
                     f'</td>'
                 )
@@ -162,9 +166,9 @@ def gerar_html_tabela_quadro_ficha(df_ficha):
                 first = False
 
             tr_content = (
-                f'<td style="padding: 10px 12px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; background-color: {bg_row}; color: #334155;">{row_s["COD_APLICACAO"]}</td>'
-                f'<td style="padding: 10px 12px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; background-color: {bg_row}; font-weight: 600; color: #0f172a;">{val_p}</td>'
-                f'<td style="padding: 10px 12px; border-bottom: 1px solid #cbd5e1; background-color: {bg_row}; text-align: center;">{badge_html}</td>'
+                f'<td style="padding: 8px 12px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; background-color: {bg_row}; color: #334155; font-size: 12.5px;">{cod_saida_str}</td>'
+                f'<td style="padding: 8px 12px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; background-color: {bg_row}; font-weight: 600; color: #0f172a;">{val_p}</td>'
+                f'<td style="padding: 8px 12px; border-bottom: 1px solid #cbd5e1; background-color: {bg_row}; text-align: center;">{badge_html}</td>'
                 f'</tr>'
             )
             parts.append(tr_content)

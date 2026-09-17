@@ -99,25 +99,13 @@ def gerar_modelo_planilha(caminho_arquivo="planilha_transferencias_audesp.xlsx")
     """
     dados_exemplo = [
         {
-            "FICHA": "1240",
+            "FICHA": "1516",
             "FONTE_RECURSO": "1 - Tesouro",
             "TIPO_ITEM": "ENTRADA",
-            "COD_APLICACAO": "210.0000 - EDUCAÇÃO INFANTIL",
-            "VALOR": 70429.23,
-            "COD_APLICACAO_PARCEIRO": "110.0000 - GERAL",
-            "VALOR_TOTAL_NEGATIVO": 93832.32,
-            "HISTORICO_CUSTOM": "",
-            "STATUS": "PENDENTE",
-            "MENSAGEM": ""
-        },
-        {
-            "FICHA": "1240",
-            "FONTE_RECURSO": "1 - Tesouro",
-            "TIPO_ITEM": "SAIDA",
             "COD_APLICACAO": "110.0000 - GERAL",
-            "VALOR": 70429.23,
-            "COD_APLICACAO_PARCEIRO": "210.0000 - EDUCAÇÃO INFANTIL",
-            "VALOR_TOTAL_NEGATIVO": 93832.32,
+            "VALOR": 897.88,
+            "COD_APLICACAO_PARCEIRO": "110.0000 - GERAL",
+            "VALOR_TOTAL_NEGATIVO": 897.88,
             "HISTORICO_CUSTOM": "",
             "STATUS": "PENDENTE",
             "MENSAGEM": ""
@@ -131,8 +119,8 @@ def gerar_modelo_planilha(caminho_arquivo="planilha_transferencias_audesp.xlsx")
 def montar_planilha_compensacao_audesp(df_balancos):
     """
     1. Filtra SOMENTE as Fichas que possuem saldos negativos no Saldo Geral (SALDO < 0).
-    2. Para cada valor negativo (valor cheio), consome dos saldos positivos da mesma Ficha.
-    3. Exibe o valor cheio negativo e vincula as linhas de saídas correspondentes na frente.
+    2. Agrupa ESTRITAMENTE POR FICHA (processando TODOS os itens negativos daquela Ficha, ex: Ficha 1516).
+    3. Para cada valor negativo (valor cheio), consome dos saldos positivos da mesma Ficha.
     """
     if df_balancos.empty:
         return pd.DataFrame(columns=COLUNAS_PLANILHA_TRANSFERENCIA)
@@ -142,9 +130,10 @@ def montar_planilha_compensacao_audesp(df_balancos):
 
     itens_transferencia = []
 
-    grupos = df_fichas.groupby(["FICHA", "FONTE_RECURSO"])
+    # AGRUPAMENTO ESTRITO POR FICHA (Para capturar TODOS os saldos negativos da Ficha)
+    grupos = df_fichas.groupby("FICHA")
 
-    for (ficha, fonte), grupo in grupos:
+    for ficha, grupo in grupos:
         ficha_str = str(ficha).strip()
         negativos = grupo[grupo["SALDO"] < 0].copy()
         positivos = grupo[grupo["SALDO"] > 0].copy()
@@ -156,6 +145,7 @@ def montar_planilha_compensacao_audesp(df_balancos):
             valor_cheio_negativo = abs(row_neg["SALDO"])
             valor_necessario = valor_cheio_negativo
             cod_app_entrada = str(row_neg["COD_APLICACAO"]).strip()
+            fonte_entrada = str(row_neg["FONTE_RECURSO"]).strip()
 
             for idx_pos, row_pos in positivos.iterrows():
                 if valor_necessario <= 0:
@@ -167,11 +157,12 @@ def montar_planilha_compensacao_audesp(df_balancos):
 
                 valor_transf = min(disponivel, valor_necessario)
                 cod_app_saida = str(row_pos["COD_APLICACAO"]).strip()
+                fonte_saida = str(row_pos["FONTE_RECURSO"]).strip()
 
                 # Item de ENTRADA (Crédito na aplicação negativa com valor cheio registrado)
                 itens_transferencia.append({
                     "FICHA": ficha_str,
-                    "FONTE_RECURSO": fonte,
+                    "FONTE_RECURSO": fonte_entrada,
                     "TIPO_ITEM": "ENTRADA",
                     "COD_APLICACAO": cod_app_entrada,
                     "VALOR": round(valor_transf, 2),
@@ -185,7 +176,7 @@ def montar_planilha_compensacao_audesp(df_balancos):
                 # Item de SAÍDA (Débito na aplicação positiva correspondente)
                 itens_transferencia.append({
                     "FICHA": ficha_str,
-                    "FONTE_RECURSO": fonte,
+                    "FONTE_RECURSO": fonte_saida,
                     "TIPO_ITEM": "SAIDA",
                     "COD_APLICACAO": cod_app_saida,
                     "VALOR": round(valor_transf, 2),
@@ -200,5 +191,5 @@ def montar_planilha_compensacao_audesp(df_balancos):
                 positivos.at[idx_pos, "SALDO"] = disponivel - valor_transf
 
     df_resultado = pd.DataFrame(itens_transferencia, columns=COLUNAS_PLANILHA_TRANSFERENCIA)
-    log.info(f"Gerados {len(df_resultado)} registros de Entrada/Saída vinculados para {len(fichas_negativas)} fichas.")
+    log.info(f"Gerados {len(df_resultado)} registros de Entrada/Saída vinculados para {len(fichas_negativas)} fichas com saldos negativos.")
     return df_resultado
