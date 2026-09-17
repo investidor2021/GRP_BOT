@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import sys
+import re
 from datetime import datetime
 
 # Adiciona o diretório atual ao path para importação das funções
@@ -105,21 +106,18 @@ with tab_manual:
 def gerar_html_tabela_quadro_ficha(df_ficha):
     """
     Gera uma tabela HTML estilizada em quadros com células mescladas (rowspan)
-    onde o quadro de Entrada fica maior cobrindo as N linhas de Saída à frente.
+    sem quebras de linha ou indentação que façam o Streamlit interpretar como código markdown.
     """
-    html = """
-    <div style="overflow-x: auto; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.04);">
-    <table style="width:100%; border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13px;">
-      <thead>
-        <tr style="background-color: #f8fafc; text-align: left; color: #1e293b; border-bottom: 2px solid #cbd5e1;">
-          <th style="padding: 12px; border-right: 1px solid #cbd5e1; width: 38%;">📥 Entrada (Crédito - Valor Cheio Negativo)</th>
-          <th style="padding: 12px; border-right: 1px solid #cbd5e1; width: 42%;">📤 Saídas Vinculadas à Frente (Débito)</th>
-          <th style="padding: 12px; border-right: 1px solid #cbd5e1; width: 12%;">Valor Parcela</th>
-          <th style="padding: 12px; width: 8%; text-align: center;">Status</th>
-        </tr>
-      </thead>
-      <tbody>
-    """
+    parts = []
+    parts.append('<div style="overflow-x: auto; border-radius: 8px; border: 1px solid #cbd5e1; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.04);">')
+    parts.append('<table style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 13px;">')
+    parts.append('<thead><tr style="background-color: #f8fafc; text-align: left; color: #1e293b; border-bottom: 2px solid #cbd5e1;">')
+    parts.append('<th style="padding: 12px; border-right: 1px solid #cbd5e1; width: 38%;">📥 Entrada (Crédito - Valor Cheio Negativo)</th>')
+    parts.append('<th style="padding: 12px; border-right: 1px solid #cbd5e1; width: 42%;">📤 Saídas Vinculadas à Frente (Débito)</th>')
+    parts.append('<th style="padding: 12px; border-right: 1px solid #cbd5e1; width: 12%;">Valor Parcela</th>')
+    parts.append('<th style="padding: 12px; width: 8%; text-align: center;">Status</th>')
+    parts.append('</tr></thead><tbody>')
+
     df_entradas = df_ficha[df_ficha["TIPO_ITEM"] == "ENTRADA"]
     cods_entradas_unicos = df_entradas["COD_APLICACAO"].unique()
 
@@ -151,26 +149,28 @@ def gerar_html_tabela_quadro_ficha(df_ficha):
 
             bg_row = "#ffffff" if idx_s % 2 == 0 else "#f8fafc"
 
-            html += "<tr>"
+            parts.append("<tr>")
             if first:
-                html += f"""
-                <td rowspan="{num_saidas}" style="padding: 14px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; vertical-align: middle; background-color: #f0f9ff; border-left: 4px solid #0284c7;">
-                  <div style="font-weight: 700; font-size: 13.5px; color: #0369a1;">{cod_e}</div>
-                  <div style="font-size: 16px; font-weight: bold; color: #0284c7; margin-top: 6px;">{str_cheio}</div>
-                  <div style="font-size: 11px; color: #0e7490; margin-top: 2px; font-style: italic;">(Valor Cheio Negativo a Zerar)</div>
-                </td>
-                """
+                td_cell = (
+                    f'<td rowspan="{num_saidas}" style="padding: 14px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; vertical-align: middle; background-color: #f0f9ff; border-left: 4px solid #0284c7;">'
+                    f'<div style="font-weight: 700; font-size: 13.5px; color: #0369a1;">{cod_e}</div>'
+                    f'<div style="font-size: 16px; font-weight: bold; color: #0284c7; margin-top: 6px;">{str_cheio}</div>'
+                    f'<div style="font-size: 11px; color: #0e7490; margin-top: 2px; font-style: italic;">(Valor Cheio Negativo a Zerar)</div>'
+                    f'</td>'
+                )
+                parts.append(td_cell)
                 first = False
 
-            html += f"""
-                <td style="padding: 10px 12px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; background-color: {bg_row}; color: #334155;">{row_s['COD_APLICACAO']}</td>
-                <td style="padding: 10px 12px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; background-color: {bg_row}; font-weight: 600; color: #0f172a;">{val_p}</td>
-                <td style="padding: 10px 12px; border-bottom: 1px solid #cbd5e1; background-color: {bg_row}; text-align: center;">{badge_html}</td>
-              </tr>
-            """
+            tr_content = (
+                f'<td style="padding: 10px 12px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; background-color: {bg_row}; color: #334155;">{row_s["COD_APLICACAO"]}</td>'
+                f'<td style="padding: 10px 12px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; background-color: {bg_row}; font-weight: 600; color: #0f172a;">{val_p}</td>'
+                f'<td style="padding: 10px 12px; border-bottom: 1px solid #cbd5e1; background-color: {bg_row}; text-align: center;">{badge_html}</td>'
+                f'</tr>'
+            )
+            parts.append(tr_content)
 
-    html += "</tbody></table></div>"
-    return html
+    parts.append("</tbody></table></div>")
+    return "".join(parts)
 
 # =========================================================================
 # VISUALIZAÇÃO EM QUADROS COM CÉLULAS MESCLADAS (ROWSPAN) POR FICHA
@@ -206,7 +206,10 @@ if "df_transferencias" in st.session_state and not st.session_state["df_transfer
         str_in = f"R$ {val_in:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         str_out = f"R$ {val_out:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-        with st.expander(f"🏦 **FICHA {ficha}** | Fonte: {fonte_desc} | Total Crédito: {str_in} | Total Débito: {str_out}", expanded=True):
+        # TÍTULO LIMPO SEM CARACTERES | PARA NÃO QUEBRAR O ST.EXPANDER
+        titulo_expander = f"🏦 FICHA {ficha} - Fonte: {fonte_desc} - Crédito: {str_in} - Débito: {str_out}"
+
+        with st.expander(titulo_expander, expanded=True):
             html_quadro = gerar_html_tabela_quadro_ficha(df_ficha)
             st.markdown(html_quadro, unsafe_allow_html=True)
 
