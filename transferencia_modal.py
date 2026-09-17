@@ -52,11 +52,13 @@ def preencher_documento_transferencia_ficha(page, data_transf, historico_global,
     page.wait_for_timeout(1500)
 
     # 2. Preenche a Data da Transferência
-    campo_data = page.locator("label:has-text('Data')").locator("..").locator("input.dx-texteditor-input").first
-    if not campo_data.is_visible():
-        campo_data = page.locator("input.dx-texteditor-input[role='combobox']").first
-    
-    campo_data.wait_for(state="visible", timeout=10000)
+    # O campo de Data é um widget dx-datebox do DevExtreme. O seletor genérico de
+    # combobox (input.dx-texteditor-input[role='combobox']) bate em outros campos
+    # escondidos na tela (ex: seletor de Ano no topo, filtros da listagem), e o
+    # Playwright travava no primeiro encontrado (que ficava sempre escondido).
+    # Restringindo ao widget dx-datebox e exigindo :visible resolve isso.
+    campo_data = page.locator("div.dx-datebox input.dx-texteditor-input[role='combobox']:visible").first
+    campo_data.wait_for(state="visible", timeout=15000)
     campo_data.click()
     campo_data.fill("")
     campo_data.fill(str(data_transf))
@@ -65,10 +67,7 @@ def preencher_documento_transferencia_ficha(page, data_transf, historico_global,
 
     # 3. Preenche o Histórico Geral
     hist_texto = str(itens_ficha[0].get("HISTORICO_CUSTOM") or historico_global).strip()
-    campo_hist = page.locator("textarea.dx-texteditor-input[role='textbox']").first
-    if not campo_hist.is_visible():
-        campo_hist = page.locator("label:has-text('Histórico')").locator("..").locator("textarea").first
-
+    campo_hist = page.locator("textarea.dx-texteditor-input[role='textbox']:visible").first
     campo_hist.wait_for(state="visible", timeout=10000)
     campo_hist.click()
     campo_hist.fill("")
