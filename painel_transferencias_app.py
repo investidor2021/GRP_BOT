@@ -3,6 +3,7 @@ import pandas as pd
 import os
 import sys
 import re
+import subprocess
 from datetime import datetime
 
 # Adiciona o diretório atual ao path para importação das funções
@@ -14,8 +15,6 @@ from organizador_transferencias import (
     extrair_dados_demonstrativo_pdf,
     COLUNAS_PLANILHA_TRANSFERENCIA
 )
-from main_transferencia import executar_robo_transferencias
-
 @st.cache_data(show_spinner="Processando PDF do Demonstrativo...")
 def processar_pdf_cached(pdf_bytes, caminho_temp_pdf):
     """Salva o PDF e monta a planilha de compensação. Cacheado pelo conteúdo do arquivo,
@@ -241,16 +240,41 @@ if "df_transferencias" in st.session_state and not st.session_state["df_transfer
         else:
             st.info("Iniciando o navegador Playwright e realizando login...")
             with st.spinner("Executando robô de transferências no GRP..."):
-                try:
-                    executar_robo_transferencias(
-                        usuario=usuario_input,
-                        senha=senha_input,
-                        historico_global=historico_global_input,
-                        data_transferencia=data_input,
-                        caminho_planilha=caminho_salvar,
-                        headless=headless_option
-                    )
+                # Roda em um processo separado (não dentro do Streamlit/Tornado).
+                # O Streamlit força o asyncio a usar o SelectorEventLoop no Windows,
+                # que não suporta criar subprocessos (o Chromium do Playwright),
+                # causando "NotImplementedError". Um processo próprio usa o loop
+                # padrão do Windows (ProactorEventLoop), que suporta.
+                script_robo = os.path.join(os.path.dirname(__file__), "main_transferencia.py")
+                cmd = [
+                    sys.executable, script_robo,
+                    "--usuario", usuario_input,
+                    "--senha", senha_input,
+                    "--historico", historico_global_input,
+                    "--data", data_input,
+                    "--planilha", caminho_salvar,
+                ]
+                if headless_option:
+                    cmd.append("--headless")
+
+                resultado = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    cwd=os.path.dirname(__file__),
+                )
+
+                if resultado.returncode == 0:
                     st.balloons()
                     st.success("Robô concluiu o processamento das transferências por Ficha com sucesso!")
-                except Exception as e:
-                    st.error(f"Erro na execução do robô: {e}")
+                else:
+                    st.error(f"Erro na execução do robô (código {resultado.returncode}).")
+
+                if resultado.stdout or resultado.stderr:
+                    with st.expander("📄 Log da execução"):
+                        if resultado.stdout:
+                            st.text(resultado.stdout)
+                        if resultado.stderr:
+                            st.text(resultado.stderr)
