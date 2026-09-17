@@ -24,7 +24,7 @@ st.set_page_config(
 st.title("🏦 Robô de Transferência Financeira GRP (Validação AUDESP)")
 st.markdown("""
 Este robô compensa **saldos negativos contra positivos** dentro da **mesma Ficha (conta)** para aprovação na validação AUDESP.
-> ⚡ **Processamento Automático:** Ao enviar o PDF, o sistema calcula automaticamente as fichas com saldos negativos e exibe os valores cheios e seus correspondentes pareados.
+> ⚡ **Processamento Automático:** Ao enviar o PDF, o sistema calcula as fichas com saldos negativos e organiza 1 linha de Entrada (Valor Cheio) com suas linhas de Saída vinculadas.
 """)
 
 st.sidebar.header("🔑 Credenciais e Parâmetros")
@@ -95,21 +95,26 @@ with tab_manual:
         {"FICHA": "1240", "FONTE_RECURSO": "1 - Tesouro", "COD_APLICACAO": "220.0000 - ENSINO FUNDAMENTAL", "SALDO": 1647335.60},
         {"FICHA": "1240", "FONTE_RECURSO": "1 - Tesouro", "COD_APLICACAO": "221.0000 - REMUNERAÇÃO DE APLICAÇÕES", "SALDO": 46380.39},
     ])
-    df_saldos_input = st.data_editor(exemplo_df, num_rows="dynamic", key="editor_saldos")
+    df_saldos_input = st.dataframe(exemplo_df, use_container_width=True)
 
     if st.button("⚡ Calcular Pareamento Manual"):
-        df_gerado_man = montar_planilha_compensacao_audesp(df_saldos_input)
+        df_gerado_man = montar_planilha_compensacao_audesp(exemplo_df)
         st.session_state["df_transferencias"] = df_gerado_man
         st.success(f"Foram geradas {len(df_gerado_man)} operações de transferência para as fichas com saldos negativos!")
 
 # =========================================================================
-# VISUALIZAÇÃO SEPARADA POR CONTAS (FICHAS) COM VALORES CHEIOS E DEBITOS CORRESPONDENTES
+# VISUALIZAÇÃO HIERÁRQUICA E SOMENTE LEITURA (NÃO EDITÁVEL)
+# 1 LINHA DE ENTRADA (VALOR CHEIO) E AS LINHAS DE SAÍDA VINCULADAS
 # =========================================================================
 if "df_transferencias" in st.session_state and not st.session_state["df_transferencias"].empty:
     df_transf = st.session_state["df_transferencias"]
 
+    # Salva a planilha em segundo plano para o robô ler
+    caminho_salvar = os.path.join(os.path.dirname(__file__), "planilha_transferencias_audesp.xlsx")
+    df_transf.to_excel(caminho_salvar, index=False)
+
     st.markdown("---")
-    st.header("📊 2. Visualização Discriminada por Conta (Ficha)")
+    st.header("📊 2. Resumo de Transferências por Conta (Somente Leitura)")
 
     tot_fichas = df_transf["FICHA"].nunique()
     tot_entradas = df_transf[df_transf["TIPO_ITEM"] == "ENTRADA"]["VALOR"].sum()
@@ -120,7 +125,7 @@ if "df_transferencias" in st.session_state and not st.session_state["df_transfer
     m2.metric("Total Geral de Entradas (Crédito)", f"R$ {tot_entradas:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
     m3.metric("Total Geral de Saídas (Débito)", f"R$ {tot_saidas:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
-    st.markdown("### 🏦 Pareamento Discriminado (Valor Cheio Negativo <-> Origens de Débito)")
+    st.markdown("### 🏦 Estrutura de Lançamento por Ficha (1 Entrada -> N Saídas Vinculadas)")
 
     grupos_ficha = df_transf.groupby("FICHA")
 
@@ -132,37 +137,38 @@ if "df_transferencias" in st.session_state and not st.session_state["df_transfer
         str_in = f"R$ {val_in:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         str_out = f"R$ {val_out:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-        with st.expander(f"🏦 **FICHA {ficha}** | Fonte: {fonte_desc} | 📥 Total Crédito: {str_in} | 📤 Total Débito: {str_out}", expanded=True):
+        with st.expander(f"🏦 **FICHA {ficha}** | Fonte: {fonte_desc} | Total Crédito: {str_in} | Total Débito: {str_out}", expanded=True):
             
-            # Monta tabela pareada direta mostrando valor cheio negativo na esquerda e linhas de saída correspondentes na frente
-            rows_pareadas = []
+            # Filtra as Entradas únicas dessa Ficha
             df_entradas = df_ficha[df_ficha["TIPO_ITEM"] == "ENTRADA"]
-            
-            for idx_e, r_e in df_entradas.iterrows():
-                val_cheio = r_e.get("VALOR_TOTAL_NEGATIVO", r_e["VALOR"])
-                val_cheio_fmt = f"R$ {val_cheio:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                val_item_fmt = f"R$ {r_e['VALOR']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            cods_entradas_unicos = df_entradas["COD_APLICACAO"].unique()
 
-                rows_pareadas.append({
-                    "Cód. Aplicação Entrada (Crédito / Negativo)": r_e["COD_APLICACAO"],
-                    "Valor Cheio Negativo a Zerar": val_cheio_fmt,
-                    "Cód. Aplicação Saída Correspondente (Débito)": r_e.get("COD_APLICACAO_PARCEIRO", "-"),
-                    "Valor Parcela Débito": val_item_fmt,
-                    "Status": r_e.get("STATUS", "PENDENTE")
-                })
-            
-            if rows_pareadas:
-                df_vis_pareada = pd.DataFrame(rows_pareadas)
-                st.dataframe(df_vis_pareada, use_container_width=True)
-            else:
-                st.info("Nenhum pareamento para esta ficha.")
+            for cod_e in cods_entradas_unicos:
+                sub_e = df_entradas[df_entradas["COD_APLICACAO"] == cod_e]
+                val_cheio = sub_e["VALOR_TOTAL_NEGATIVO"].iloc[0] if "VALOR_TOTAL_NEGATIVO" in sub_e.columns else sub_e["VALOR"].sum()
+                str_cheio = f"R$ {val_cheio:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-    st.markdown("---")
-    st.subheader("📋 Tabela Completa (Editável)")
-    df_exibicao = st.data_editor(st.session_state["df_transferencias"], num_rows="dynamic", key="editor_final", use_container_width=True)
-    
-    caminho_salvar = os.path.join(os.path.dirname(__file__), "planilha_transferencias_audesp.xlsx")
-    df_exibicao.to_excel(caminho_salvar, index=False)
+                # 1 LINHA DE CABEÇALHO PARA A ENTRADA COM VALOR CHEIO
+                st.markdown(f"#### 📥 **Entrada (Crédito):** `{cod_e}` &nbsp;|&nbsp; **Valor Cheio a Zerar:** `{str_cheio}`")
+
+                # LINHAS DE SAÍDA VINCULADAS A ESSA ENTRADA ESPECÍFICA
+                # Na planilha, cada linha de Entrada tem sua contrapartida de Saída com o mesmo COD_APLICACAO_PARCEIRO ou pareada
+                df_saidas_vinculadas = df_ficha[
+                    (df_ficha["TIPO_ITEM"] == "SAIDA") & 
+                    (df_ficha["COD_APLICACAO_PARCEIRO"] == cod_e)
+                ]
+
+                if not df_saidas_vinculadas.empty:
+                    df_vis_saidas = pd.DataFrame({
+                        "📤 Cód. Aplicação Saída Vinculada (Débito)": df_saidas_vinculadas["COD_APLICACAO"],
+                        "Valor Parcela Débito": df_saidas_vinculadas["VALOR"].apply(lambda v: f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")),
+                        "Status Lançamento": df_saidas_vinculadas["STATUS"]
+                    })
+                    st.dataframe(df_vis_saidas, use_container_width=True, hide_index=True)
+                else:
+                    st.info("Nenhuma saída vinculada.")
+                
+                st.markdown("<hr style='margin: 8px 0; border: 0.5px dashed #ccc;'>", unsafe_allow_html=True)
 
     st.markdown("---")
     st.header("🤖 3. Execução do Robô Playwright")
