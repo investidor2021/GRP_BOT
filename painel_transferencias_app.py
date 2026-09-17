@@ -24,7 +24,7 @@ st.set_page_config(
 st.title("🏦 Robô de Transferência Financeira GRP (Validação AUDESP)")
 st.markdown("""
 Este robô compensa **saldos negativos contra positivos** dentro da **mesma Ficha (conta)** para aprovação na validação AUDESP.
-> ⚠️ **Filtro Estrito:** Traz **somente as fichas que possuem saldos negativos** e gera 1 documento por Ficha com N Entradas e N Saídas.
+> ⚡ **Processamento Automático:** Ao enviar o PDF, o sistema calcula automaticamente as fichas com saldos negativos e exibe os valores cheios e seus correspondentes pareados.
 """)
 
 st.sidebar.header("🔑 Credenciais e Parâmetros")
@@ -42,7 +42,7 @@ historico_global_input = st.sidebar.text_area(
     key="grp_hist"
 )
 
-st.header("📋 1. Configuração e Extração da Planilha")
+st.header("📋 1. Configuração e Upload")
 
 tab_pdf, tab_planilha, tab_manual = st.tabs([
     "📄 Extrair de PDF (Demonstrativo)", 
@@ -51,7 +51,7 @@ tab_pdf, tab_planilha, tab_manual = st.tabs([
 ])
 
 with tab_pdf:
-    st.info("Envie o relatório PDF 'Demonstrativo das Aplicações Financeiras'. O sistema trará **APENAS as Fichas que contenham saldos negativos**.")
+    st.info("Envie o relatório PDF 'Demonstrativo das Aplicações Financeiras'. O cálculo de compensação é feito **AUTOMATICAMENTE** no upload.")
     pdf_file = st.file_uploader("Upload do Demonstrativo em PDF", type=["pdf"], key="pdf_uploader")
     
     if pdf_file is not None:
@@ -59,14 +59,12 @@ with tab_pdf:
         with open(caminho_temp_pdf, "wb") as f:
             f.write(pdf_file.getbuffer())
         
+        # CÁLCULO AUTOMÁTICO SEM BOTÃO
         df_pdf_extraido = extrair_dados_demonstrativo_pdf(caminho_temp_pdf)
-        st.subheader("Fichas com Saldos Negativos Identificadas:")
-        st.dataframe(df_pdf_extraido, use_container_width=True)
-
-        if st.button("⚡ Gerar Pareamento AUDESP (Apenas Fichas Negativas)", type="primary"):
+        if not df_pdf_extraido.empty:
             df_gerado_pdf = montar_planilha_compensacao_audesp(df_pdf_extraido)
             st.session_state["df_transferencias"] = df_gerado_pdf
-            st.success(f"Foram geradas {len(df_gerado_pdf)} operações para as fichas com saldos negativos!")
+            st.success(f"✅ Cálculo Automático Concluído! {len(df_gerado_pdf)} lançamentos gerados para as fichas com saldos negativos.")
 
 with tab_planilha:
     col1, col2 = st.columns(2)
@@ -91,28 +89,28 @@ with tab_planilha:
 
 with tab_manual:
     exemplo_df = pd.DataFrame([
-        {"FICHA": "1268", "FONTE_RECURSO": "1 - Tesouro", "COD_APLICACAO": "110.0000 - GERAL", "SALDO": -5063.53},
-        {"FICHA": "1268", "FONTE_RECURSO": "1 - Tesouro", "COD_APLICACAO": "111.0000 - REMUNERAÇÃO DE APLICAÇÕES FINANCEIRAS", "SALDO": 4045.65},
-        {"FICHA": "1490", "FONTE_RECURSO": "1 - Tesouro", "COD_APLICACAO": "110.0000 - GERAL", "SALDO": -1149.04},
-        {"FICHA": "1490", "FONTE_RECURSO": "1 - Tesouro", "COD_APLICACAO": "111.0000 - REMUNERAÇÃO DE APLICAÇÕES FINANCEIRAS", "SALDO": 1163.79},
+        {"FICHA": "1240", "FONTE_RECURSO": "1 - Tesouro", "COD_APLICACAO": "110.0000 - GERAL", "SALDO": 71367.40},
+        {"FICHA": "1240", "FONTE_RECURSO": "1 - Tesouro", "COD_APLICACAO": "210.0000 - EDUCAÇÃO INFANTIL", "SALDO": -93832.32},
+        {"FICHA": "1240", "FONTE_RECURSO": "1 - Tesouro", "COD_APLICACAO": "212.0000 - EDUCAÇÃO INFANTIL - CRECHE", "SALDO": -77631.55},
+        {"FICHA": "1240", "FONTE_RECURSO": "1 - Tesouro", "COD_APLICACAO": "220.0000 - ENSINO FUNDAMENTAL", "SALDO": 1647335.60},
+        {"FICHA": "1240", "FONTE_RECURSO": "1 - Tesouro", "COD_APLICACAO": "221.0000 - REMUNERAÇÃO DE APLICAÇÕES", "SALDO": 46380.39},
     ])
     df_saldos_input = st.data_editor(exemplo_df, num_rows="dynamic", key="editor_saldos")
 
-    if st.button("⚡ Gerar Pareamento Manual"):
+    if st.button("⚡ Calcular Pareamento Manual"):
         df_gerado_man = montar_planilha_compensacao_audesp(df_saldos_input)
         st.session_state["df_transferencias"] = df_gerado_man
         st.success(f"Foram geradas {len(df_gerado_man)} operações de transferência para as fichas com saldos negativos!")
 
 # =========================================================================
-# VISUALIZAÇÃO SEPARADINHA POR CONTAS (FICHAS) COM ENTRADAS E SAÍDAS
+# VISUALIZAÇÃO SEPARADA POR CONTAS (FICHAS) COM VALORES CHEIOS E DEBITOS CORRESPONDENTES
 # =========================================================================
 if "df_transferencias" in st.session_state and not st.session_state["df_transferencias"].empty:
     df_transf = st.session_state["df_transferencias"]
 
     st.markdown("---")
-    st.header("📊 2. Visualização Separada por Contas / Fichas")
+    st.header("📊 2. Visualização Discriminada por Conta (Ficha)")
 
-    # Métrica Geral
     tot_fichas = df_transf["FICHA"].nunique()
     tot_entradas = df_transf[df_transf["TIPO_ITEM"] == "ENTRADA"]["VALOR"].sum()
     tot_saidas = df_transf[df_transf["TIPO_ITEM"] == "SAIDA"]["VALOR"].sum()
@@ -122,7 +120,7 @@ if "df_transferencias" in st.session_state and not st.session_state["df_transfer
     m2.metric("Total Geral de Entradas (Crédito)", f"R$ {tot_entradas:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
     m3.metric("Total Geral de Saídas (Débito)", f"R$ {tot_saidas:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
-    st.markdown("### 🏦 Detalhamento de Lançamentos por Conta")
+    st.markdown("### 🏦 Pareamento Discriminado (Valor Cheio Negativo <-> Origens de Débito)")
 
     grupos_ficha = df_transf.groupby("FICHA")
 
@@ -134,28 +132,30 @@ if "df_transferencias" in st.session_state and not st.session_state["df_transfer
         str_in = f"R$ {val_in:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         str_out = f"R$ {val_out:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-        with st.expander(f"🏦 **FICHA {ficha}** | Fonte: {fonte_desc} | 📥 Entrada: {str_in} | 📤 Saída: {str_out}", expanded=True):
-            col_k1, col_k2, col_k3 = st.columns(3)
-            col_k1.metric("Valor Total Entrada (Crédito em Conta)", str_in)
-            col_k2.metric("Valor Total Saída (Débito em Conta)", str_out)
+        with st.expander(f"🏦 **FICHA {ficha}** | Fonte: {fonte_desc} | 📥 Total Crédito: {str_in} | 📤 Total Débito: {str_out}", expanded=True):
             
-            diferenca = abs(val_in - val_out)
-            if diferenca < 0.01:
-                col_k3.success("✅ Documento Equilibrado")
+            # Monta tabela pareada direta mostrando valor cheio negativo na esquerda e linhas de saída correspondentes na frente
+            rows_pareadas = []
+            df_entradas = df_ficha[df_ficha["TIPO_ITEM"] == "ENTRADA"]
+            
+            for idx_e, r_e in df_entradas.iterrows():
+                val_cheio = r_e.get("VALOR_TOTAL_NEGATIVO", r_e["VALOR"])
+                val_cheio_fmt = f"R$ {val_cheio:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                val_item_fmt = f"R$ {r_e['VALOR']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+                rows_pareadas.append({
+                    "Cód. Aplicação Entrada (Crédito / Negativo)": r_e["COD_APLICACAO"],
+                    "Valor Cheio Negativo a Zerar": val_cheio_fmt,
+                    "Cód. Aplicação Saída Correspondente (Débito)": r_e.get("COD_APLICACAO_PARCEIRO", "-"),
+                    "Valor Parcela Débito": val_item_fmt,
+                    "Status": r_e.get("STATUS", "PENDENTE")
+                })
+            
+            if rows_pareadas:
+                df_vis_pareada = pd.DataFrame(rows_pareadas)
+                st.dataframe(df_vis_pareada, use_container_width=True)
             else:
-                col_k3.warning(f"⚠️ Diferença: R$ {diferenca:,.2f}")
-
-            c_in, c_out = st.columns(2)
-
-            with c_in:
-                st.markdown("#### 📥 Entradas (Crédito em Conta)")
-                df_in_grid = df_ficha[df_ficha["TIPO_ITEM"] == "ENTRADA"][["COD_APLICACAO", "VALOR", "STATUS", "MENSAGEM"]]
-                st.dataframe(df_in_grid, use_container_width=True)
-
-            with c_out:
-                st.markdown("#### 📤 Saídas (Débito em Conta)")
-                df_out_grid = df_ficha[df_ficha["TIPO_ITEM"] == "SAIDA"][["COD_APLICACAO", "VALOR", "STATUS", "MENSAGEM"]]
-                st.dataframe(df_out_grid, use_container_width=True)
+                st.info("Nenhum pareamento para esta ficha.")
 
     st.markdown("---")
     st.subheader("📋 Tabela Completa (Editável)")

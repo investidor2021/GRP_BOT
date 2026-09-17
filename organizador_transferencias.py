@@ -8,14 +8,16 @@ import pdfplumber
 log = logging.getLogger(__name__)
 
 COLUNAS_PLANILHA_TRANSFERENCIA = [
-    "FICHA",                 # Ficha Financeira / Conta Bancária
-    "FONTE_RECURSO",         # Fonte de Recurso
-    "TIPO_ITEM",             # 'ENTRADA' ou 'SAIDA'
-    "COD_APLICACAO",         # Código de Aplicação da operação
-    "VALOR",                 # Valor da operação (Crédito ou Débito)
-    "HISTORICO_CUSTOM",      # Histórico específico
-    "STATUS",                # PENDENTE, SUCESSO, ERRO
-    "MENSAGEM"               # Log do resultado do robô
+    "FICHA",                    # Ficha Financeira / Conta Bancária
+    "FONTE_RECURSO",            # Fonte de Recurso
+    "TIPO_ITEM",                # 'ENTRADA' ou 'SAIDA'
+    "COD_APLICACAO",            # Código de Aplicação da operação
+    "VALOR",                    # Valor da operação (Crédito ou Débito)
+    "COD_APLICACAO_PARCEIRO",   # Código de Aplicação correspondente (Para vizualização na frente)
+    "VALOR_TOTAL_NEGATIVO",     # Valor total cheio a zerar
+    "HISTORICO_CUSTOM",         # Histórico específico
+    "STATUS",                   # PENDENTE, SUCESSO, ERRO
+    "MENSAGEM"                  # Log do resultado do robô
 ]
 
 def converter_valor_br(val_str):
@@ -68,7 +70,7 @@ def extrair_dados_demonstrativo_pdf(caminho_pdf):
                     valores_tokens = match_cod.group(2).strip().split()
                     
                     if valores_tokens:
-                        # USA ESTRITAMENTE A COLUNA 'SALDO GERAL' (Aplicações + CC), QUE É O ÚLTIMO TOKEN DA LINHA
+                        # USA ESTRITAMENTE A COLUNA 'SALDO GERAL' (ÚLTIMO TOKEN DA LINHA)
                         saldo_geral = converter_valor_br(valores_tokens[-1])
 
                         registros.append({
@@ -93,26 +95,29 @@ def extrair_dados_demonstrativo_pdf(caminho_pdf):
 
 def gerar_modelo_planilha(caminho_arquivo="planilha_transferencias_audesp.xlsx"):
     """
-    Gera um modelo de planilha Excel estruturado com suporte a N Entradas e N Saídas por Ficha.
+    Gera um modelo de planilha Excel estruturado.
     """
     dados_exemplo = [
-        # Ficha 1442 (Múltiplas Entradas para os negativos e 1 Saída do saldo positivo)
         {
-            "FICHA": "1442",
-            "FONTE_RECURSO": "2 - TRANSFERÊNCIAS E CONVÊNIOS ESTADUAIS - VINCULADOS",
+            "FICHA": "1240",
+            "FONTE_RECURSO": "1 - Tesouro",
             "TIPO_ITEM": "ENTRADA",
-            "COD_APLICACAO": "261.0000 - EDUCAÇÃO - FUNDEB - MAGISTÉRIO",
-            "VALOR": 1461234.24,
+            "COD_APLICACAO": "210.0000 - EDUCAÇÃO INFANTIL",
+            "VALOR": 70429.23,
+            "COD_APLICACAO_PARCEIRO": "110.0000 - GERAL",
+            "VALOR_TOTAL_NEGATIVO": 93832.32,
             "HISTORICO_CUSTOM": "",
             "STATUS": "PENDENTE",
             "MENSAGEM": ""
         },
         {
-            "FICHA": "1442",
-            "FONTE_RECURSO": "2 - TRANSFERÊNCIAS E CONVÊNIOS ESTADUAIS - VINCULADOS",
+            "FICHA": "1240",
+            "FONTE_RECURSO": "1 - Tesouro",
             "TIPO_ITEM": "SAIDA",
-            "COD_APLICACAO": "260.0000 - EDUCAÇÃO - FUNDEB",
-            "VALOR": 1461234.24,
+            "COD_APLICACAO": "110.0000 - GERAL",
+            "VALOR": 70429.23,
+            "COD_APLICACAO_PARCEIRO": "210.0000 - EDUCAÇÃO INFANTIL",
+            "VALOR_TOTAL_NEGATIVO": 93832.32,
             "HISTORICO_CUSTOM": "",
             "STATUS": "PENDENTE",
             "MENSAGEM": ""
@@ -126,8 +131,8 @@ def gerar_modelo_planilha(caminho_arquivo="planilha_transferencias_audesp.xlsx")
 def montar_planilha_compensacao_audesp(df_balancos):
     """
     1. Filtra SOMENTE as Fichas que possuem saldos negativos no Saldo Geral (SALDO < 0).
-    2. Para cada Ficha com saldo negativo, consome os saldos positivos disponíveis no Saldo Geral da mesma Ficha.
-    3. Gera registros discriminados de ENTRADA (Crédito) e SAIDA (Débito) no mesmo documento por Ficha.
+    2. Para cada valor negativo (valor cheio), consome dos saldos positivos da mesma Ficha.
+    3. Exibe o valor cheio negativo e vincula as linhas de saídas correspondentes na frente.
     """
     if df_balancos.empty:
         return pd.DataFrame(columns=COLUNAS_PLANILHA_TRANSFERENCIA)
@@ -148,7 +153,8 @@ def montar_planilha_compensacao_audesp(df_balancos):
             continue
 
         for idx_neg, row_neg in negativos.iterrows():
-            valor_necessario = abs(row_neg["SALDO"])
+            valor_cheio_negativo = abs(row_neg["SALDO"])
+            valor_necessario = valor_cheio_negativo
             cod_app_entrada = str(row_neg["COD_APLICACAO"]).strip()
 
             for idx_pos, row_pos in positivos.iterrows():
@@ -162,25 +168,29 @@ def montar_planilha_compensacao_audesp(df_balancos):
                 valor_transf = min(disponivel, valor_necessario)
                 cod_app_saida = str(row_pos["COD_APLICACAO"]).strip()
 
-                # Item de ENTRADA (Crédito na aplicação negativa)
+                # Item de ENTRADA (Crédito na aplicação negativa com valor cheio registrado)
                 itens_transferencia.append({
                     "FICHA": ficha_str,
                     "FONTE_RECURSO": fonte,
                     "TIPO_ITEM": "ENTRADA",
                     "COD_APLICACAO": cod_app_entrada,
                     "VALOR": round(valor_transf, 2),
+                    "COD_APLICACAO_PARCEIRO": cod_app_saida,
+                    "VALOR_TOTAL_NEGATIVO": round(valor_cheio_negativo, 2),
                     "HISTORICO_CUSTOM": "",
                     "STATUS": "PENDENTE",
                     "MENSAGEM": ""
                 })
 
-                # Item de SAÍDA (Débito na aplicação positiva)
+                # Item de SAÍDA (Débito na aplicação positiva correspondente)
                 itens_transferencia.append({
                     "FICHA": ficha_str,
                     "FONTE_RECURSO": fonte,
                     "TIPO_ITEM": "SAIDA",
                     "COD_APLICACAO": cod_app_saida,
                     "VALOR": round(valor_transf, 2),
+                    "COD_APLICACAO_PARCEIRO": cod_app_entrada,
+                    "VALOR_TOTAL_NEGATIVO": round(valor_cheio_negativo, 2),
                     "HISTORICO_CUSTOM": "",
                     "STATUS": "PENDENTE",
                     "MENSAGEM": ""
@@ -190,5 +200,5 @@ def montar_planilha_compensacao_audesp(df_balancos):
                 positivos.at[idx_pos, "SALDO"] = disponivel - valor_transf
 
     df_resultado = pd.DataFrame(itens_transferencia, columns=COLUNAS_PLANILHA_TRANSFERENCIA)
-    log.info(f"Gerados {len(df_resultado)} registros de Entrada/Saída para {len(fichas_negativas)} fichas com saldos negativos no Saldo Geral.")
+    log.info(f"Gerados {len(df_resultado)} registros de Entrada/Saída vinculados para {len(fichas_negativas)} fichas.")
     return df_resultado
