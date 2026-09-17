@@ -6,7 +6,7 @@ from datetime import datetime
 
 from playwright_context import criar_pagina
 from login import login_grp
-from transferencia_modal import ir_para_transferencia_financeira, preencher_transferencia_item
+from transferencia_modal import ir_para_transferencia_financeira, preencher_documento_transferencia_ficha
 from organizador_transferencias import COLUNAS_PLANILHA_TRANSFERENCIA
 
 LOG_PATH = os.path.join(os.path.dirname(__file__), "transferencia_robo.log")
@@ -23,12 +23,17 @@ log = logging.getLogger(__name__)
 def executar_robo_transferencias(usuario, senha, historico_global, data_transferencia, caminho_planilha, headless=False):
     """
     Executa o robô de transferência financeira no GRP.
+    Agrupa os itens por FICHA e cria 1 documento de transferência por Ficha (suportando N Entradas e N Saídas).
     """
     if not os.path.exists(caminho_planilha):
         raise FileNotFoundError(f"Arquivo de planilha não encontrado: {caminho_planilha}")
 
     df = pd.read_excel(caminho_planilha)
-    log.info(f"Lidas {len(df)} transferências da planilha '{caminho_planilha}'")
+    log.info(f"Lidas {len(df)} linhas da planilha '{caminho_planilha}'")
+
+    if df.empty:
+        log.warning("Planilha vazia. Nenhuma transferência para processar.")
+        return
 
     p, browser, page = criar_pagina(headless=headless)
     
@@ -40,26 +45,38 @@ def executar_robo_transferencias(usuario, senha, historico_global, data_transfer
         # 2. Navegação para Transferência Financeira
         ir_para_transferencia_financeira(page)
 
-        # 3. Processamento de cada transferência
-        for idx, row in df.iterrows():
-            item_transf = row.to_dict()
-            status_atual = str(item_transf.get("STATUS", "")).strip().upper()
-            
-            if status_atual == "SUCESSO":
-                log.info(f"Linha {idx+1} já processada com SUCESSO. Pulando...")
+        # 3. Agrupa as linhas da planilha por FICHA
+        grupos_ficha = df.groupby("FICHA")
+
+        for ficha, sub_df in grupos_ficha:
+            itens_ficha = sub_df.to_dict(orient="records")
+
+            # Verifica se essa Ficha já foi processada completamente
+            todos_sucesso = all(str(item.get("STATUS", "")).upper() == "SUCESSO" for item in itens_ficha)
+            if todos_sucesso:
+                log.info(f"Ficha {ficha} já processada com SUCESSO anteriormente. Pulando...")
                 continue
 
             try:
-                preencher_transferencia_item(page, data_transferencia, historico_global, item_transf)
-                df.at[idx, "STATUS"] = "SUCESSO"
-                df.at[idx, "MENSAGEM"] = "Lançamento efetuado com sucesso."
-                log.info(f"✅ Transferência {idx+1} concluída com sucesso.")
-            except Exception as ex_item:
-                df.at[idx, "STATUS"] = "ERRO"
-                df.at[idx, "MENSAGEM"] = str(ex_item)
-                log.error(f"❌ Erro na transferência {idx+1}: {ex_item}")
+                sucesso = preencher_documento_transferencia_ficha(
+                    page, 
+                    data_transferencia, 
+                    historico_global, 
+                    ficha, 
+                    itens_ficha
+                )
+                if sucesso:
+                    idxs = sub_df.index
+                    df.loc[idxs, "STATUS"] = "SUCESSO"
+                    df.loc[idxs, "MENSAGEM"] = "Documento de Transferência (Entradas e Saídas) lançado com sucesso."
+                    log.info(f"✅ Ficha {ficha} finalizada com sucesso.")
+            except Exception as ex_ficha:
+                idxs = sub_df.index
+                df.loc[idxs, "STATUS"] = "ERRO"
+                df.loc[idxs, "MENSAGEM"] = str(ex_ficha)
+                log.error(f"❌ Erro ao processar Ficha {ficha}: {ex_ficha}")
 
-            # Salva o progresso na planilha Excel
+            # Salva o progresso no arquivo Excel
             df.to_excel(caminho_planilha, index=False)
 
     except Exception as ex_geral:
