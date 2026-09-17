@@ -30,9 +30,9 @@ def converter_valor_br(val_str):
 
 def extrair_dados_demonstrativo_pdf(caminho_pdf):
     """
-    Extrai as fichas, fontes de recursos, códigos de aplicação e saldos
+    Extrai as fichas, fontes de recursos, códigos de aplicação e o Saldo Geral (última coluna)
     do PDF 'Demonstrativo das Aplicações Financeiras'.
-    Filtra SOMENTE as fichas que possuem pelo menos um saldo negativo (SALDO < 0).
+    Filtra SOMENTE as fichas que possuem pelo menos um Saldo Geral negativo (SALDO < 0).
     """
     registros = []
     
@@ -49,7 +49,7 @@ def extrair_dados_demonstrativo_pdf(caminho_pdf):
             for linha in linhas:
                 linha_str = linha.strip()
 
-                # Captura a Ficha: "Ficha: 608 - Banco: ..."
+                # Captura a Ficha: "Ficha: 1442 - Banco: ..."
                 match_ficha = re.search(r"Ficha:\s*(\d+)", linha_str, re.IGNORECASE)
                 if match_ficha:
                     ficha_atual = match_ficha.group(1).strip()
@@ -61,23 +61,21 @@ def extrair_dados_demonstrativo_pdf(caminho_pdf):
                     fonte_atual = match_fonte.group(1).strip()
                     continue
 
-                # Captura linhas com Código de Aplicação
-                match_app = re.search(r"^(\d{3}\.\d{4}\s*-\s*[A-ZÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇÑ\s\-\/\(\)]+)\s+([\d\.\,\-]+(?:\s+[\d\.\,\-]+)+)$", linha_str)
-                if match_app and ficha_atual and fonte_atual:
-                    cod_app_desc = match_app.group(1).strip()
-                    valores_str = match_app.group(2).strip().split()
+                # Captura linhas com Código de Aplicação e lista de números ao final
+                match_cod = re.search(r"^(\d{3}\.\d{4}\s*-\s*.+?)\s+((?:[\d\.\,\-]+\s*)+)$", linha_str)
+                if match_cod and ficha_atual and fonte_atual:
+                    cod_app_desc = match_cod.group(1).strip()
+                    valores_tokens = match_cod.group(2).strip().split()
                     
-                    if len(valores_str) >= 2:
-                        saldo_cc = converter_valor_br(valores_str[-2])
-                        saldo_geral = converter_valor_br(valores_str[-1])
-                        
-                        saldo_final = saldo_cc if saldo_cc != 0 else saldo_geral
+                    if valores_tokens:
+                        # USA ESTRITAMENTE A COLUNA 'SALDO GERAL' (Aplicações + CC), QUE É O ÚLTIMO TOKEN DA LINHA
+                        saldo_geral = converter_valor_br(valores_tokens[-1])
 
                         registros.append({
                             "FICHA": ficha_atual,
                             "FONTE_RECURSO": fonte_atual,
                             "COD_APLICACAO": cod_app_desc,
-                            "SALDO": saldo_final
+                            "SALDO": saldo_geral
                         })
 
     df = pd.DataFrame(registros)
@@ -86,11 +84,11 @@ def extrair_dados_demonstrativo_pdf(caminho_pdf):
         log.warning("Nenhum registro localizado no PDF.")
         return df
 
-    # FILTRAGEM ESTRITA: Mantém APENAS Fichas que contenham pelo menos 1 saldo negativo (< 0)
+    # FILTRAGEM ESTRITA: Mantém APENAS Fichas que contenham pelo menos 1 Saldo Geral negativo (< 0)
     fichas_com_negativo = df[df["SALDO"] < 0]["FICHA"].unique()
     df_filtrado = df[df["FICHA"].isin(fichas_com_negativo)].copy()
 
-    log.info(f"PDF extraído: {len(df_filtrado)} registros filtrados referentes a {len(fichas_com_negativo)} fichas com saldos negativos.")
+    log.info(f"PDF extraído: {len(df_filtrado)} registros filtrados referentes a {len(fichas_com_negativo)} fichas com saldos negativos no Saldo Geral.")
     return df_filtrado
 
 def gerar_modelo_planilha(caminho_arquivo="planilha_transferencias_audesp.xlsx"):
@@ -98,44 +96,23 @@ def gerar_modelo_planilha(caminho_arquivo="planilha_transferencias_audesp.xlsx")
     Gera um modelo de planilha Excel estruturado com suporte a N Entradas e N Saídas por Ficha.
     """
     dados_exemplo = [
-        # Ficha 1268 (1 Entrada e 1 Saída no mesmo documento de transferência)
+        # Ficha 1442 (Múltiplas Entradas para os negativos e 1 Saída do saldo positivo)
         {
-            "FICHA": "1268",
-            "FONTE_RECURSO": "1 - Tesouro",
+            "FICHA": "1442",
+            "FONTE_RECURSO": "2 - TRANSFERÊNCIAS E CONVÊNIOS ESTADUAIS - VINCULADOS",
             "TIPO_ITEM": "ENTRADA",
-            "COD_APLICACAO": "110.0000 - GERAL",
-            "VALOR": 4045.65,
+            "COD_APLICACAO": "261.0000 - EDUCAÇÃO - FUNDEB - MAGISTÉRIO",
+            "VALOR": 1461234.24,
             "HISTORICO_CUSTOM": "",
             "STATUS": "PENDENTE",
             "MENSAGEM": ""
         },
         {
-            "FICHA": "1268",
-            "FONTE_RECURSO": "1 - Tesouro",
+            "FICHA": "1442",
+            "FONTE_RECURSO": "2 - TRANSFERÊNCIAS E CONVÊNIOS ESTADUAIS - VINCULADOS",
             "TIPO_ITEM": "SAIDA",
-            "COD_APLICACAO": "111.0000 - REMUNERAÇÃO DE APLICAÇÕES FINANCEIRAS",
-            "VALOR": 4045.65,
-            "HISTORICO_CUSTOM": "",
-            "STATUS": "PENDENTE",
-            "MENSAGEM": ""
-        },
-        # Ficha 1490
-        {
-            "FICHA": "1490",
-            "FONTE_RECURSO": "1 - Tesouro",
-            "TIPO_ITEM": "ENTRADA",
-            "COD_APLICACAO": "110.0000 - GERAL",
-            "VALOR": 1149.04,
-            "HISTORICO_CUSTOM": "",
-            "STATUS": "PENDENTE",
-            "MENSAGEM": ""
-        },
-        {
-            "FICHA": "1490",
-            "FONTE_RECURSO": "1 - Tesouro",
-            "TIPO_ITEM": "SAIDA",
-            "COD_APLICACAO": "111.0000 - REMUNERAÇÃO DE APLICAÇÕES FINANCEIRAS",
-            "VALOR": 1149.04,
+            "COD_APLICACAO": "260.0000 - EDUCAÇÃO - FUNDEB",
+            "VALOR": 1461234.24,
             "HISTORICO_CUSTOM": "",
             "STATUS": "PENDENTE",
             "MENSAGEM": ""
@@ -148,14 +125,13 @@ def gerar_modelo_planilha(caminho_arquivo="planilha_transferencias_audesp.xlsx")
 
 def montar_planilha_compensacao_audesp(df_balancos):
     """
-    1. Filtra SOMENTE as Fichas que possuem saldos negativos (SALDO < 0).
-    2. Para cada Ficha com saldo negativo, consome os saldos positivos disponíveis na mesma Ficha.
-    3. Gera registros discriminados de ENTRADA (Crédito) e SAIDA (Débito) permitindo 1-para-N ou N-para-1 na mesma tela.
+    1. Filtra SOMENTE as Fichas que possuem saldos negativos no Saldo Geral (SALDO < 0).
+    2. Para cada Ficha com saldo negativo, consome os saldos positivos disponíveis no Saldo Geral da mesma Ficha.
+    3. Gera registros discriminados de ENTRADA (Crédito) e SAIDA (Débito) no mesmo documento por Ficha.
     """
     if df_balancos.empty:
         return pd.DataFrame(columns=COLUNAS_PLANILHA_TRANSFERENCIA)
 
-    # Garante que só processamos fichas que contêm saldos negativos
     fichas_negativas = df_balancos[df_balancos["SALDO"] < 0]["FICHA"].unique()
     df_fichas = df_balancos[df_balancos["FICHA"].isin(fichas_negativas)].copy()
 
@@ -186,7 +162,7 @@ def montar_planilha_compensacao_audesp(df_balancos):
                 valor_transf = min(disponivel, valor_necessario)
                 cod_app_saida = str(row_pos["COD_APLICACAO"]).strip()
 
-                # Item de ENTRADA (Crédito na conta negativa)
+                # Item de ENTRADA (Crédito na aplicação negativa)
                 itens_transferencia.append({
                     "FICHA": ficha_str,
                     "FONTE_RECURSO": fonte,
@@ -198,7 +174,7 @@ def montar_planilha_compensacao_audesp(df_balancos):
                     "MENSAGEM": ""
                 })
 
-                # Item de SAÍDA (Débito na conta positiva)
+                # Item de SAÍDA (Débito na aplicação positiva)
                 itens_transferencia.append({
                     "FICHA": ficha_str,
                     "FONTE_RECURSO": fonte,
@@ -214,5 +190,5 @@ def montar_planilha_compensacao_audesp(df_balancos):
                 positivos.at[idx_pos, "SALDO"] = disponivel - valor_transf
 
     df_resultado = pd.DataFrame(itens_transferencia, columns=COLUNAS_PLANILHA_TRANSFERENCIA)
-    log.info(f"Gerados {len(df_resultado)} registros de Entrada/Saída para {len(fichas_negativas)} fichas com saldos negativos.")
+    log.info(f"Gerados {len(df_resultado)} registros de Entrada/Saída para {len(fichas_negativas)} fichas com saldos negativos no Saldo Geral.")
     return df_resultado
