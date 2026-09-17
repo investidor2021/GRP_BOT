@@ -108,13 +108,14 @@ def gerar_html_tabela_quadro_ficha(df_ficha):
     onde o quadro de Entrada fica maior cobrindo as N linhas de Saída à frente.
     """
     html = """
-    <table style="width:100%; border-collapse: collapse; margin-bottom: 20px; font-family: sans-serif; font-size: 13px;">
+    <div style="overflow-x: auto; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.04);">
+    <table style="width:100%; border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13px;">
       <thead>
-        <tr style="background-color: #f1f5f9; text-align: left; color: #0f172a;">
-          <th style="padding: 10px; border: 1px solid #cbd5e1; width: 40%;">📥 Entrada (Crédito - Valor Cheio)</th>
-          <th style="padding: 10px; border: 1px solid #cbd5e1; width: 40%;">📤 Saídas Vinculadas à Frente (Débito)</th>
-          <th style="padding: 10px; border: 1px solid #cbd5e1; width: 12%;">Valor Parcela</th>
-          <th style="padding: 10px; border: 1px solid #cbd5e1; width: 8%;">Status</th>
+        <tr style="background-color: #f8fafc; text-align: left; color: #1e293b; border-bottom: 2px solid #cbd5e1;">
+          <th style="padding: 12px; border-right: 1px solid #cbd5e1; width: 38%;">📥 Entrada (Crédito - Valor Cheio Negativo)</th>
+          <th style="padding: 12px; border-right: 1px solid #cbd5e1; width: 42%;">📤 Saídas Vinculadas à Frente (Débito)</th>
+          <th style="padding: 12px; border-right: 1px solid #cbd5e1; width: 12%;">Valor Parcela</th>
+          <th style="padding: 12px; width: 8%; text-align: center;">Status</th>
         </tr>
       </thead>
       <tbody>
@@ -139,27 +140,36 @@ def gerar_html_tabela_quadro_ficha(df_ficha):
         first = True
         for idx_s, row_s in df_saidas_vinculadas.iterrows():
             val_p = f"R$ {row_s['VALOR']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            st_color = "#16a34a" if str(row_s.get("STATUS")).upper() == "SUCESSO" else "#64748b"
+            
+            st_text = str(row_s.get("STATUS", "PENDENTE")).upper()
+            if st_text == "SUCESSO":
+                badge_html = '<span style="background-color: #dcfce7; color: #15803d; padding: 4px 10px; border-radius: 12px; font-weight: 700; font-size: 11px;">SUCESSO</span>'
+            elif st_text == "ERRO":
+                badge_html = '<span style="background-color: #fee2e2; color: #b91c1c; padding: 4px 10px; border-radius: 12px; font-weight: 700; font-size: 11px;">ERRO</span>'
+            else:
+                badge_html = '<span style="background-color: #f1f5f9; color: #475569; padding: 4px 10px; border-radius: 12px; font-weight: 600; font-size: 11px;">PENDENTE</span>'
+
+            bg_row = "#ffffff" if idx_s % 2 == 0 else "#f8fafc"
 
             html += "<tr>"
             if first:
                 html += f"""
-                <td rowspan="{num_saidas}" style="padding: 12px; border: 1px solid #cbd5e1; vertical-align: middle; background-color: #f0f9ff; color: #0369a1;">
+                <td rowspan="{num_saidas}" style="padding: 14px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; vertical-align: middle; background-color: #f0f9ff; border-left: 4px solid #0284c7;">
                   <div style="font-weight: 700; font-size: 13.5px; color: #0369a1;">{cod_e}</div>
-                  <div style="font-size: 15px; font-weight: bold; color: #0284c7; margin-top: 6px;">{str_cheio}</div>
-                  <div style="font-size: 11px; color: #0e7490; margin-top: 2px;">(Valor Cheio a Zerar)</div>
+                  <div style="font-size: 16px; font-weight: bold; color: #0284c7; margin-top: 6px;">{str_cheio}</div>
+                  <div style="font-size: 11px; color: #0e7490; margin-top: 2px; font-style: italic;">(Valor Cheio Negativo a Zerar)</div>
                 </td>
                 """
                 first = False
 
             html += f"""
-                <td style="padding: 10px; border: 1px solid #cbd5e1; background-color: #ffffff; color: #334155;">{row_s['COD_APLICACAO']}</td>
-                <td style="padding: 10px; border: 1px solid #cbd5e1; background-color: #ffffff; font-weight: 600; color: #0f172a;">{val_p}</td>
-                <td style="padding: 10px; border: 1px solid #cbd5e1; background-color: #ffffff; color: {st_color}; font-weight: 600;">{row_s.get('STATUS', 'PENDENTE')}</td>
+                <td style="padding: 10px 12px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; background-color: {bg_row}; color: #334155;">{row_s['COD_APLICACAO']}</td>
+                <td style="padding: 10px 12px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; background-color: {bg_row}; font-weight: 600; color: #0f172a;">{val_p}</td>
+                <td style="padding: 10px 12px; border-bottom: 1px solid #cbd5e1; background-color: {bg_row}; text-align: center;">{badge_html}</td>
               </tr>
             """
 
-    html += "</tbody></table>"
+    html += "</tbody></table></div>"
     return html
 
 # =========================================================================
