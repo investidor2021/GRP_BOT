@@ -213,6 +213,15 @@ if "df_transferencias" in st.session_state and not st.session_state["df_transfer
     st.markdown("### 🏦 Quadros de Pareamento (Entrada Mesclada <-> Saídas a Frente)")
 
     grupos_ficha = df_transf.groupby("FICHA")
+    lista_fichas = list(grupos_ficha.groups.keys())
+
+    col_sel_tudo, col_desel_tudo = st.columns(2)
+    if col_sel_tudo.button("✅ Selecionar Tudo"):
+        for f in lista_fichas:
+            st.session_state[f"chk_ficha_{f}"] = True
+    if col_desel_tudo.button("❌ Desselecionar Tudo"):
+        for f in lista_fichas:
+            st.session_state[f"chk_ficha_{f}"] = False
 
     for ficha, df_ficha in grupos_ficha:
         fonte_desc = df_ficha["FONTE_RECURSO"].iloc[0] if "FONTE_RECURSO" in df_ficha.columns else ""
@@ -225,20 +234,31 @@ if "df_transferencias" in st.session_state and not st.session_state["df_transfer
         # TÍTULO LIMPO SEM CARACTERES | PARA NÃO QUEBRAR O ST.EXPANDER
         titulo_expander = f"🏦 FICHA {ficha} - Fonte: {fonte_desc} - Crédito: {str_in} - Débito: {str_out}"
 
-        with st.expander(titulo_expander, expanded=True):
-            html_quadro = gerar_html_tabela_quadro_ficha(df_ficha)
-            st.markdown(html_quadro, unsafe_allow_html=True)
+        col_chk, col_exp = st.columns([0.04, 0.96])
+        with col_chk:
+            st.checkbox("", value=True, key=f"chk_ficha_{ficha}", label_visibility="collapsed")
+        with col_exp:
+            with st.expander(titulo_expander, expanded=True):
+                html_quadro = gerar_html_tabela_quadro_ficha(df_ficha)
+                st.markdown(html_quadro, unsafe_allow_html=True)
 
     st.markdown("---")
     st.header("🤖 3. Execução do Robô Playwright")
+
+    fichas_marcadas = [f for f in lista_fichas if st.session_state.get(f"chk_ficha_{f}", True)]
 
     if st.button("🚀 Rodar Robô no GRP", type="primary"):
         if not usuario_input or not senha_input:
             st.error("Por favor, preencha o Usuário e a Senha no painel lateral antes de rodar o robô!")
         elif not historico_global_input:
             st.error("Por favor, defina o Histórico padrão no painel lateral!")
+        elif not fichas_marcadas:
+            st.error("Nenhuma Ficha marcada. Marque pelo menos uma Ficha para rodar o robô.")
         else:
-            st.info("Iniciando o navegador Playwright e realizando login...")
+            # Salva só as Fichas marcadas — as desmarcadas (ex: já lançadas manualmente
+            # ou em teste anterior) ficam de fora dessa execução.
+            df_transf[df_transf["FICHA"].isin(fichas_marcadas)].to_excel(caminho_salvar, index=False)
+            st.info(f"Iniciando o navegador Playwright e realizando login... ({len(fichas_marcadas)} de {len(lista_fichas)} Fichas marcadas)")
             with st.spinner("Executando robô de transferências no GRP..."):
                 # Roda em um processo separado (não dentro do Streamlit/Tornado).
                 # O Streamlit força o asyncio a usar o SelectorEventLoop no Windows,

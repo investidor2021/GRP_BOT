@@ -88,6 +88,13 @@ def executar_robo_transferencias(usuario, senha, historico_global, data_transfer
                 df.loc[idxs, "MENSAGEM"] = str(ex_ficha)
                 log.error(f"❌ Erro ao processar Ficha {ficha}: {ex_ficha}")
 
+                try:
+                    caminho_print = os.path.join(os.path.dirname(__file__), f"erro_ficha_{ficha}.png")
+                    page.screenshot(path=caminho_print, full_page=True)
+                    log.info(f"Screenshot do erro salva em: {caminho_print}")
+                except Exception:
+                    pass
+
                 # Se a Ficha falhou no meio do preenchimento, o documento pode ter ficado
                 # aberto na tela, escondendo o botão "Novo" e travando todas as próximas
                 # Fichas. Renavega para a tela de Transferência Financeira para recuperar.

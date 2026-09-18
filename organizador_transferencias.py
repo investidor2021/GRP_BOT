@@ -135,10 +135,46 @@ def montar_planilha_compensacao_audesp(df_balancos):
 
     for ficha, grupo in grupos:
         ficha_str = str(ficha).strip()
+        grupo = grupo.copy()
+
+        # BUG CONHECIDO DO RELATÓRIO DO ERP: às vezes o mesmo código de aplicação (mesma
+        # Ficha + Fonte de Recurso) aparece duas vezes no demonstrativo — uma linha com
+        # saldo negativo e outra com saldo positivo. Isso não é um desequilíbrio real,
+        # é o relatório listando a mesma conta duas vezes, e tentar compensar não resolve
+        # porque o ERP não atualiza esse saldo negativo "fantasma". Ignora esse negativo
+        # da compensação e avisa que precisa de ajuste manual do time técnico do sistema.
+        grupo["_CHAVE_CONTA"] = (
+            grupo["FONTE_RECURSO"].astype(str).str.strip() + "||" + grupo["COD_APLICACAO"].astype(str).str.strip()
+        )
+        tem_negativo_e_positivo = grupo.groupby("_CHAVE_CONTA")["SALDO"].transform(
+            lambda s: (s < 0).any() and (s > 0).any()
+        )
+        chaves_com_bug = grupo.loc[tem_negativo_e_positivo, "_CHAVE_CONTA"].unique()
+        for chave_bug in chaves_com_bug:
+            fonte_bug, cod_bug = chave_bug.split("||", 1)
+            log.warning(
+                f"Ficha {ficha_str}: código {cod_bug} (Fonte {fonte_bug}) aparece duplicado no "
+                f"demonstrativo com saldo negativo E positivo — provável bug do relatório do ERP, "
+                f"não um desequilíbrio real. Ignorando esse saldo negativo da compensação; precisa "
+                f"de ajuste manual do time técnico do sistema."
+            )
+        grupo = grupo[~(tem_negativo_e_positivo & (grupo["SALDO"] < 0))].drop(columns="_CHAVE_CONTA")
+
         negativos = grupo[grupo["SALDO"] < 0].copy()
         positivos = grupo[grupo["SALDO"] > 0].copy()
 
         if negativos.empty or positivos.empty:
+            continue
+
+        # Um código de aplicação não pode ser ao mesmo tempo destino de crédito (Entrada)
+        # e origem de débito (Saída) dentro do mesmo documento de transferência — o GRP
+        # recusa esse tipo de lançamento. Então nunca usamos, como fonte positiva, um
+        # código que também está na lista de negativos (precisando receber) da mesma Ficha.
+        codigos_negativos = set(negativos["COD_APLICACAO"].astype(str).str.strip())
+        positivos = positivos[~positivos["COD_APLICACAO"].astype(str).str.strip().isin(codigos_negativos)].copy()
+
+        if positivos.empty:
+            log.warning(f"Ficha {ficha_str}: todos os saldos positivos coincidem com códigos que também precisam de crédito. Nenhuma compensação possível.")
             continue
 
         for idx_neg, row_neg in negativos.iterrows():
@@ -189,6 +225,12 @@ def montar_planilha_compensacao_audesp(df_balancos):
 
                 valor_necessario -= valor_transf
                 positivos.at[idx_pos, "SALDO"] = disponivel - valor_transf
+
+            if valor_necessario > 0.01:
+                log.warning(
+                    f"Ficha {ficha_str}, código {cod_app_entrada}: faltou R$ {valor_necessario:.2f} de saldo "
+                    f"positivo disponível para compensar (sem contar códigos que também precisam de crédito)."
+                )
 
     df_resultado = pd.DataFrame(itens_transferencia, columns=COLUNAS_PLANILHA_TRANSFERENCIA)
     log.info(f"Gerados {len(df_resultado)} registros de Entrada/Saída vinculados para {len(fichas_negativas)} fichas com saldos negativos.")
